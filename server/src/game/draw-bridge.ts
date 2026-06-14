@@ -18,6 +18,9 @@ export function prepareEvent(state: GameState, action: Action, draw?: () => Card
     case 'hand:double':
       return { ...action, card: draw() };
 
+    case 'hand:split':
+      return { ...action, leftCard: draw(), rightCard: draw() };
+
     default:
       throw new Error(`not implemented: ${(action as Action).type}`);
   }

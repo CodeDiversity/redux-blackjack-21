@@ -31,4 +31,17 @@ describe('drawBridge.prepareEvent', () => {
     const ev = prepareEvent(state, { type: 'hand:double', seatId: state.players[0].id, handIndex: 0 }, draw);
     expect(ev).toEqual({ type: 'hand:double', seatId: state.players[0].id, handIndex: 0, card: { suit: '♦', rank: 'K' } });
   });
+
+  it('attaches 2 cards to hand:split', () => {
+    const state: GameState = { ...baseState(), phase: 'player_turn', activeSeat: 0 };
+    const draw = makeDraw([{ suit: '♣', rank: '2' }, { suit: '♦', rank: '9' }]);
+    const ev = prepareEvent(state, { type: 'hand:split', seatId: state.players[0].id, handIndex: 0 }, draw);
+    expect(ev).toEqual({
+      type: 'hand:split',
+      seatId: state.players[0].id,
+      handIndex: 0,
+      leftCard: { suit: '♣', rank: '2' },
+      rightCard: { suit: '♦', rank: '9' },
+    });
+  });
 });
