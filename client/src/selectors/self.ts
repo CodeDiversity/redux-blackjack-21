@@ -14,3 +14,13 @@ export const selectMySeat = createSelector(
   [selectGameState, selectSelfSeatId],
   (state, selfId) => (state && selfId ? state.players.find((p) => p.id === selfId) ?? null : null),
 );
+
+export const selectMyLastBet = createSelector(
+  [selectMySeat],
+  (me) => me?.lastBet ?? 0,
+);
+
+export const selectCanRebet = createSelector(
+  [selectMySeat],
+  (me) => !!me && me.lastBet > 0 && me.lastBet <= me.bankroll && me.status === 'betting',
+);
