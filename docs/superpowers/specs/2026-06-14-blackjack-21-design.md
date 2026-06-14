@@ -124,6 +124,7 @@ type PlayerSeat = {
   bankroll: number;      // starts at 1000
   hands: Hand[];         // length 1 normally, 2 after a split
   status: SeatStatus;
+  connectedAt: number;   // epoch ms; used to pick the new host on host departure
 };
 
 type Phase =
@@ -333,7 +334,7 @@ Performance, load, fuzz, visual regression.
 
 The only places that need to change to support 3–6 players:
 
-1. **Lobby:** the host's room now allows up to N seats; "Start" requires all seated players to be ready.
+1. **Lobby:** the host's room now allows up to N seats; "Start" requires all seated players to be ready. If the host leaves, the longest-connected remaining seat is promoted to host automatically.
 2. **Layout:** the `<PlayerSeat>` `.map()` automatically renders more seats; CSS lays them out in a fan.
 3. **Game state:** `players` is already an array; turn order is already `activeSeat: number | null`.
 4. **Dealer turn:** unchanged — runs after all player hands resolve.
@@ -351,4 +352,4 @@ No component-level rework. No new event types. No new state shapes.
 ## Open Question (blocking — needs user decision)
 
 - **Soft 17:** spec currently says S17. Confirm or change to H17 before implementation.
-- **Host leaving mid-game:** the spec does not define behavior. Simplest: if the host leaves, the room closes. Confirm this is acceptable.
+- **Host leaving mid-game:** if the host leaves the room, the remaining player with the oldest `connectedAt` timestamp is promoted to host. If all players leave, the room is destroyed. The "Start Round" permission transfers automatically; no explicit "promote" UI is needed.
