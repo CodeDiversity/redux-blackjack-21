@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.1.0",

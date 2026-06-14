@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { selectMySeat, selectMyLastBet, selectCanRebet } from '../../src/selectors/self';
 import type { RootState } from '../../src/store';
 import type { GameState, PlayerSeat } from '../../src/shared/types';

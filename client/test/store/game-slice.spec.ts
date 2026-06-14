@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { gameReducer, gameStateReceived, roundResultReceived, gameCleared } from '../../src/store/game.slice';
 import type { GameState, RoundResult } from '../../src/shared/types';
 
