@@ -24,3 +24,8 @@ export type GameState = {
   players: PlayerSeat[]; dealer: Hand; activeSeat: number | null;
   roundNumber: number; lastResult: RoundResult | null;
 };
+export type LobbyState = {
+  roomId: string;
+  hostId: string;
+  players: { id: string; name: string; ready: boolean; connectedAt: number }[];
+};
