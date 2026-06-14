@@ -1,8 +1,11 @@
 import { useSelector } from 'react-redux';
+import { getSocket } from '../socket/client';
+import { selectAmIHost } from '../selectors/self';
 import type { RootState } from '../store';
 
 export function ResultOverlay() {
   const state = useSelector((s: RootState) => s.game.state);
+  const amHost = useSelector(selectAmIHost);
   if (!state || state.phase !== 'settled' || !state.lastResult) return null;
   return (
     <div className="result-overlay">
@@ -17,6 +20,9 @@ export function ResultOverlay() {
           );
         })}
       </ul>
+      {amHost && (
+        <button onClick={() => getSocket().emit('round:advance')}>Next Hand</button>
+      )}
     </div>
   );
 }
