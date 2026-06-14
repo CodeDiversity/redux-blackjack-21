@@ -59,7 +59,7 @@ export function BetPanel() {
   if (phase !== 'betting') return null;
 
   return (
-    <Wrapper>
+    <Wrapper className="bet-panel">
       <BetInput
         aria-label="bet-panel"
         type="number"
