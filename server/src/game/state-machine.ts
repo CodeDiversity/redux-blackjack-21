@@ -228,6 +228,32 @@ export const machine = setup({
         lastResult: null,
       };
     }),
+    assignHit: assign(({ context, event }) => {
+      if (event.type !== 'hand:hit') return {};
+      const player = context.players[context.activeSeat!];
+      const hand = player.hands[event.handIndex];
+      const newCards = [...hand.cards, event.card];
+      return {
+        __actionCount: context.__actionCount + 1,
+        shoeSize: context.shoeSize - 1,
+        players: context.players.map((p, i) =>
+          i === context.activeSeat
+            ? { ...p, hands: p.hands.map((h, j) => j === event.handIndex ? { ...h, cards: newCards, busted: isBusted(newCards) } : h) }
+            : p,
+        ),
+      };
+    }),
+    assignStand: assign(({ context, event }) => {
+      if (event.type !== 'hand:stand') return {};
+      return {
+        __actionCount: context.__actionCount + 1,
+        players: context.players.map((p, i) =>
+          i === context.activeSeat
+            ? { ...p, hands: p.hands.map((h, j) => j === event.handIndex ? { ...h, stood: true } : h) }
+            : p,
+        ),
+      };
+    }),
   },
 }).createMachine({
   id: 'blackjack',
@@ -242,7 +268,12 @@ export const machine = setup({
         'round:start': { target: 'player_turn', actions: 'assignDeal' },
       },
     },
-    player_turn: { on: {} },
+    player_turn: {
+      on: {
+        'hand:hit': { actions: 'assignHit' },
+        'hand:stand': { actions: 'assignStand' },
+      },
+    },
     dealer_turn: { on: {} },
     settled: { on: {} },
   },
