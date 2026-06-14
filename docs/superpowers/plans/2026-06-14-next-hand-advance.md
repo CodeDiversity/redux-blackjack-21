@@ -1097,6 +1097,7 @@ export function BetPanel() {
   return (
     <div className="bet-panel">
       <input
+        aria-label="bet-panel"
         type="number"
         min={10}
         max={500}
