@@ -10,6 +10,29 @@ const makeDraw = (cards: Card[]) => {
   return () => cards[i++];
 };
 
+function state_with_one_seated_player(): GameState['players'] {
+  return [
+    {
+      id: 'p0',
+      name: 'Alice',
+      bankroll: 1000,
+      hands: [{ cards: [], bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false }],
+      status: 'betting',
+      connectedAt: 0,
+      lastBet: 0,
+    },
+    {
+      id: 'p1',
+      name: '',
+      bankroll: 1000,
+      hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }],
+      status: 'empty',
+      connectedAt: 0,
+      lastBet: 0,
+    },
+  ] as GameState['players'];
+}
+
 describe('drawBridge.prepareEvent', () => {
   it('returns a bet:place event unchanged (no cards needed)', () => {
     const state = baseState();
@@ -42,6 +65,25 @@ describe('drawBridge.prepareEvent', () => {
       handIndex: 0,
       leftCard: { suit: '♣', rank: '2' },
       rightCard: { suit: '♦', rank: '9' },
+    });
+  });
+
+  it('attaches dealtCards and dealerUpcard to round:start', () => {
+    const state: GameState = {
+      ...baseState(),
+      phase: 'betting',
+      players: state_with_one_seated_player(),
+    };
+    const draw = makeDraw([
+      { suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }, // seat 0 hand
+      { suit: '♣', rank: 'K' },                            // dealer upcard
+    ]);
+    const ev = prepareEvent(state, { type: 'round:start', seatId: state.players[0].id }, draw);
+    expect(ev).toEqual({
+      type: 'round:start',
+      seatId: state.players[0].id,
+      dealtCards: [{ playerIndex: 0, cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }] }],
+      dealerUpcard: { suit: '♣', rank: 'K' },
     });
   });
 });

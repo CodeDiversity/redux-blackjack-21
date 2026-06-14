@@ -21,6 +21,16 @@ export function prepareEvent(state: GameState, action: Action, draw?: () => Card
     case 'hand:split':
       return { ...action, leftCard: draw(), rightCard: draw() };
 
+    case 'round:start': {
+      const dealtCards: { playerIndex: number; cards: [Card, Card] }[] = [];
+      state.players.forEach((p, i) => {
+        if (p.hands[0]?.bet && p.hands[0].bet > 0) {
+          dealtCards.push({ playerIndex: i, cards: [draw(), draw()] });
+        }
+      });
+      return { ...action, dealtCards, dealerUpcard: draw() };
+    }
+
     default:
       throw new Error(`not implemented: ${(action as Action).type}`);
   }
