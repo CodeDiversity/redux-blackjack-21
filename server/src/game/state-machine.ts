@@ -254,6 +254,43 @@ export const machine = setup({
         ),
       };
     }),
+    assignDouble: assign(({ context, event }) => {
+      if (event.type !== 'hand:double') return {};
+      const player = context.players[context.activeSeat!];
+      const hand = player.hands[event.handIndex];
+      const newCards = [...hand.cards, event.card];
+      return {
+        __actionCount: context.__actionCount + 1,
+        shoeSize: context.shoeSize - 1,
+        players: context.players.map((p, i) =>
+          i === context.activeSeat
+            ? {
+                ...p,
+                bankroll: p.bankroll - hand.bet,
+                hands: p.hands.map((h, j) => j === event.handIndex ? { ...h, cards: newCards, bet: h.bet * 2, doubled: true, busted: isBusted(newCards) } : h),
+              }
+            : p,
+        ),
+      };
+    }),
+    assignSplit: assign(({ context, event }) => {
+      if (event.type !== 'hand:split') return {};
+      const player = context.players[context.activeSeat!];
+      const hand = player.hands[event.handIndex];
+      const c0: Card = 'hidden' in hand.cards[0] ? (hand.cards[1] as Card) : hand.cards[0];
+      const acesRule = c0.rank === 'A' && !Config.RESPLIT_ACES;
+      const leftHand = { ...hand, cards: [hand.cards[0], event.leftCard] };
+      const rightHand: Hand = { cards: [hand.cards[1], event.rightCard], bet: hand.bet, stood: acesRule, busted: false, isBlackjack: false, doubled: false };
+      return {
+        __actionCount: context.__actionCount + 1,
+        shoeSize: context.shoeSize - 2,
+        players: context.players.map((p, i) =>
+          i === context.activeSeat
+            ? { ...p, bankroll: p.bankroll - hand.bet, hands: [leftHand, rightHand] }
+            : p,
+        ),
+      };
+    }),
   },
 }).createMachine({
   id: 'blackjack',
@@ -272,6 +309,8 @@ export const machine = setup({
       on: {
         'hand:hit': { actions: 'assignHit' },
         'hand:stand': { actions: 'assignStand' },
+        'hand:double': { actions: 'assignDouble' },
+        'hand:split': { actions: 'assignSplit' },
       },
     },
     dealer_turn: { on: {} },
