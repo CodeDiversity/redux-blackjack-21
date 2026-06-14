@@ -336,6 +336,17 @@ export const machine = setup({
       });
       return { __actionCount: context.__actionCount + 1, players, lastResult: { payouts } };
     }),
+    assignBet: assign(({ context, event }) => {
+      if (event.type !== 'bet:place') return {};
+      return {
+        __actionCount: context.__actionCount + 1,
+        players: context.players.map((p) =>
+          p.id === event.seatId
+            ? { ...p, hands: [{ ...p.hands[0], bet: event.amount }], status: 'betting' as const }
+            : p,
+        ),
+      };
+    }),
   },
 }).createMachine({
   id: 'blackjack',
@@ -347,6 +358,7 @@ export const machine = setup({
     },
     betting: {
       on: {
+        'bet:place': { actions: 'assignBet' },
         'round:start': { target: 'player_turn', actions: 'assignDeal' },
       },
     },
