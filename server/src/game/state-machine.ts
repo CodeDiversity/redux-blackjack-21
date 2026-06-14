@@ -1,4 +1,4 @@
-import { setup, createActor } from 'xstate';
+import { setup, createActor, assign } from 'xstate';
 import { Config } from '../config';
 import type { Card, CardSlot, GameState, Hand, PlayerSeat, RoundResult } from '../shared/types';
 import { isBusted } from './hand';
@@ -205,7 +205,30 @@ export const machine = setup({
       return g.predicate(fakeState, action);
     }]),
   ),
-  actions: {},
+  actions: {
+    assignDeal: assign(({ context, event }) => {
+      if (event.type !== 'round:start') return {};
+      const dealtPlayers = context.players.map((p, i) => {
+        const deal = event.dealtCards.find((d) => d.playerIndex === i);
+        if (!deal) return p;
+        return {
+          ...p,
+          hands: [{ ...p.hands[0], cards: [...deal.cards] }],
+          status: 'acting' as const,
+        };
+      });
+      const actingIndex = dealtPlayers.findIndex((p) => p.status === 'acting');
+      const hiddenCard: CardSlot = { hidden: true };
+      return {
+        __actionCount: context.__actionCount + 1,
+        players: dealtPlayers,
+        dealer: { ...context.dealer, cards: [event.dealerUpcard, hiddenCard] },
+        activeSeat: actingIndex === -1 ? null : actingIndex,
+        roundNumber: context.roundNumber + 1,
+        lastResult: null,
+      };
+    }),
+  },
 }).createMachine({
   id: 'blackjack',
   initial: 'lobby',
@@ -216,7 +239,7 @@ export const machine = setup({
     },
     betting: {
       on: {
-        'round:start': { target: 'player_turn' },
+        'round:start': { target: 'player_turn', actions: 'assignDeal' },
       },
     },
     player_turn: { on: {} },
@@ -274,6 +297,7 @@ export function applyAction(state: GameState, action: Action, draw?: () => Card)
   // prepareEvent needs a draw for any action; supply a throw-away no-op if caller didn't.
   const safeDraw: () => Card = draw ?? (() => { throw new GameError('DRAW_REQUIRED'); });
   const actor = createActor(machine, { snapshot: machine.resolveState({ value: state.phase, context: { ...state, __actionCount: 0 } }) });
+  actor.start();
   const prevSnapshot = actor.getSnapshot();
   const event = prepareEvent(state, action, safeDraw) as GameEvent;
   actor.send(event);
