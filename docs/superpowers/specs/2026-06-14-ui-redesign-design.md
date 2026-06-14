@@ -31,7 +31,8 @@ Give the existing blackjack client a polished visual treatment — hand totals, 
 | Where to put styles | Co-located in each component file | Component files are small; no need for a separate `styles/` folder per component. |
 | Theme | Single theme object | No theme switching. |
 | New primitives layer? | **No** | Once the lobby is polished, we'll know which primitives actually get reused. |
-| Hand total logic | New pure helper in `client/src/lib/handTotal.ts` | The only non-styling logic in this pass. Server is still source of truth for `busted` / `isBlackjack`. |
+| Hand total logic | New pure helper in `client/src/lib/handTotal.ts` | One of two non-styling additions in this pass. Server is still source of truth for `busted` / `isBlackjack`; `handTotal` only computes the *displayed* value. |
+| Chip color logic | New pure helper in `client/src/lib/chipColor.ts` | One of two non-styling additions in this pass. Returns the chip color gradient object for a given dollar amount. |
 | Test additions | Only `handTotal` and `chipColor` unit tests | No regression of the existing 22 vitest tests + 1 E2E. |
 | Visual regression tooling | None | Out of scope; user is the visual reviewer. |
 
@@ -253,7 +254,7 @@ Socket middleware dispatches state into Redux
 useSelector re-renders TableView → PlayerSeat → HandView
 ```
 
-`handTotal` is a derived value called inside `HandView` (and the dealer total display). It does not enter Redux. It is not memoized with `reselect` because the call is O(n) over a hand of ≤ ~10 cards, called from a small number of components.
+`handTotal` is a derived value called inside `HandView` (which renders both player and dealer hands). It does not enter Redux. It is not memoized with `reselect` because the call is O(n) over a hand of ≤ ~10 cards, called from a small number of components. `HandView` is the single call site; the parent (`PlayerSeat`, `DealerArea`) does not need to compute totals.
 
 ## Error handling
 
