@@ -38,5 +38,9 @@ export function prepareEvent(state: GameState, action: Action, draw?: () => Card
 }
 
 export function computeDealerEvent(state: GameState, draw: () => Card): PreparedEvent {
-  throw new Error('not implemented');
+  const finalHand: CardSlot[] = state.dealer.cards.map((c) => ('hidden' in c ? draw() : c));
+  while (dealerShouldHit(finalHand)) {
+    finalHand.push(draw());
+  }
+  return { type: 'round:dealerPlay', dealerFinalHand: finalHand };
 }

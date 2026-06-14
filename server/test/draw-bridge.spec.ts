@@ -94,3 +94,46 @@ describe('drawBridge.prepareEvent', () => {
     ).toThrow('DRAW_REQUIRED');
   });
 });
+
+describe('drawBridge.computeDealerEvent', () => {
+  it('reveals the hole card and applies the dealer strategy', () => {
+    const state: GameState = {
+      ...baseState(),
+      phase: 'dealer_turn',
+      dealer: { cards: [{ suit: '♠', rank: '10' }, { hidden: true }], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
+    };
+    const draw = makeDraw([
+      { suit: '♥', rank: '7' },  // hole card → total 17, stand
+    ]);
+    const ev = computeDealerEvent(state, draw);
+    expect(ev).toEqual({
+      type: 'round:dealerPlay',
+      dealerFinalHand: [{ suit: '♠', rank: '10' }, { suit: '♥', rank: '7' }],
+    });
+  });
+
+  it('continues drawing while the dealer total is below 17', () => {
+    const state: GameState = {
+      ...baseState(),
+      phase: 'dealer_turn',
+      dealer: { cards: [{ suit: '♠', rank: '5' }, { hidden: true }], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
+    };
+    const draw = makeDraw([
+      { suit: '♥', rank: '6' },  // hole card → total 11, hit
+      { suit: '♦', rank: '3' },  // hit → total 14, hit
+      { suit: '♣', rank: '2' },  // hit → total 16, hit
+      { suit: '♠', rank: 'K' },  // hit → total 26, bust
+    ]);
+    const ev = computeDealerEvent(state, draw);
+    expect(ev).toEqual({
+      type: 'round:dealerPlay',
+      dealerFinalHand: [
+        { suit: '♠', rank: '5' },
+        { suit: '♥', rank: '6' },
+        { suit: '♦', rank: '3' },
+        { suit: '♣', rank: '2' },
+        { suit: '♠', rank: 'K' },
+      ],
+    });
+  });
+});
