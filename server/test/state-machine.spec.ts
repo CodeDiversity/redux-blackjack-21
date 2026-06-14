@@ -188,7 +188,10 @@ describe('settle: lastBet population', () => {
       dealer: { ...state.dealer, cards: [{ suit: '♣', rank: 'K' }, { suit: '♦', rank: '5' }] },
     };
     // Drive to settled by having both stand.
-    const deck: Card[] = [];
+    const deck: Card[] = [
+      { suit: '♣', rank: '5' },                              // dealer hole reveal for player 0 stand
+      { suit: '♣', rank: '9' },                              // dealer hole reveal for player 1 stand
+    ];
     let i = 0;
     const draw = () => deck[i++];
     let next = applyAction(state, { type: 'hand:stand', seatId: state.players[0].id, handIndex: 0 }, draw);
