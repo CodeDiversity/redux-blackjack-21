@@ -1,6 +1,7 @@
 import { useSelector } from 'react-redux';
 import { getSocket } from '../socket/client';
-import { selectIsMyTurn, selectMySeat } from '../selectors/self';
+import { selectMySeat } from '../selectors/self';
+import { selectIsMyTurn } from '../selectors/turn';
 import { makeSelectAvailableActions } from '../selectors/actions';
 import type { RootState } from '../store';
 

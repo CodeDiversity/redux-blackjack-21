@@ -1,8 +1,6 @@
-import { useSelector } from 'react-redux';
 import { HandView } from './HandView';
 import { Bankroll } from './Bankroll';
 import { BetDisplay } from './BetDisplay';
-import type { RootState } from '../store';
 import type { PlayerSeat as Seat } from '../shared/types';
 
 export function PlayerSeatView({ seat, isActive, isMe }: { seat: Seat; isActive: boolean; isMe: boolean }) {
