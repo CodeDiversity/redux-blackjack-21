@@ -78,6 +78,22 @@ describe('gateway integration: 2-player full round', () => {
     expect(settled.lastResult).toBeTruthy();
     expect(settled.lastResult!.payouts.length).toBeGreaterThan(0);
 
+    // Host advances to the next hand.
+    const betting2Promise = listen<GameState>(host, 'game:state', (s) => s.phase === 'betting' && s.lastResult === null);
+    host.emit('round:advance');
+    const betting2 = await betting2Promise;
+    expect(betting2.phase).toBe('betting');
+    expect(betting2.lastResult).toBeNull();
+    expect(betting2.dealer.cards).toEqual([]);
+    // Each player's hand should be reset; lastBet should be preserved from the previous round.
+    for (const p of betting2.players) {
+      if (p.status === 'empty') continue;
+      expect(p.hands.length).toBe(1);
+      expect(p.hands[0].cards).toEqual([]);
+      expect(p.hands[0].bet).toBe(0);
+      expect(p.lastBet).toBe(50); // both players bet 50 in round 1
+    }
+
     host.disconnect();
     guest.disconnect();
   }, 15_000);
@@ -105,6 +121,54 @@ describe('gateway integration: 2-player full round', () => {
     expect(betting.phase).toBe('betting');
     expect(betting.lastResult).toBeNull();
     expect(betting.activeSeat).toBeNull();
+
+    host.disconnect();
+  }, 10_000);
+
+  it('rejects round:advance from a non-host with NOT_HOST', async () => {
+    const host = io(url, { transports: ['websocket'], forceNew: true });
+    const guest = io(url, { transports: ['websocket'], forceNew: true });
+    await Promise.all([
+      new Promise<void>((r) => host.on('connect', () => r())),
+      new Promise<void>((r) => guest.on('connect', () => r())),
+    ]);
+
+    const lobbyPromise = listen<LobbyState>(host, 'lobby:state');
+    await new Promise<void>((resolve) => {
+      host.emit('room:create', { name: 'Alice' }, () => resolve());
+    });
+    const lobby = await lobbyPromise;
+    const roomId = lobby.roomId;
+
+    await new Promise<void>((resolve) => {
+      guest.emit('room:join', { roomId, name: 'Bob' }, () => resolve());
+    });
+
+    // Guest (non-host) emits round:advance → expect NOT_HOST error.
+    const errPromise = listen<{ code: string }>(guest, 'error');
+    guest.emit('round:advance');
+    const err = await errPromise;
+    expect(err.code).toBe('NOT_HOST');
+
+    host.disconnect();
+    guest.disconnect();
+  }, 10_000);
+
+  it('rejects round:advance from the host while not in settled phase', async () => {
+    const host = io(url, { transports: ['websocket'], forceNew: true });
+    await new Promise<void>((r) => host.on('connect', () => r()));
+
+    const lobbyPromise = listen<LobbyState>(host, 'lobby:state');
+    await new Promise<void>((resolve) => {
+      host.emit('room:create', { name: 'Alice' }, () => resolve());
+    });
+    await lobbyPromise;
+
+    // Host is in lobby phase (not settled). Emit round:advance → expect INVALID_PHASE.
+    const errPromise = listen<{ code: string }>(host, 'error');
+    host.emit('round:advance');
+    const err = await errPromise;
+    expect(err.code).toBe('INVALID_PHASE');
 
     host.disconnect();
   }, 10_000);
