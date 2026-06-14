@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { describe, it, expect, vi } from 'vitest';
+import { ThemeProvider } from 'styled-components';
 import { BetPanel } from '../../src/components/BetPanel';
 import { connectionReducer } from '../../src/store/connection.slice';
 import { lobbyReducer } from '../../src/store/lobby.slice';
@@ -9,6 +10,7 @@ import { gameReducer } from '../../src/store/game.slice';
 import { uiReducer } from '../../src/store/ui.slice';
 import * as socketClient from '../../src/socket/client';
 import type { GameState } from '../../src/shared/types';
+import { theme } from '../../src/styles/theme';
 
 function makeStore(opts: { phase: GameState['phase']; lastBet: number; bankroll: number; status: GameState['players'][number]['status'] }) {
   const state: GameState = {
@@ -29,7 +31,11 @@ function makeStore(opts: { phase: GameState['phase']; lastBet: number; bankroll:
 }
 
 function renderWith(ui: React.ReactNode, store: ReturnType<typeof makeStore>) {
-  return render(<Provider store={store}>{ui}</Provider>);
+  return render(
+    <Provider store={store}>
+      <ThemeProvider theme={theme}>{ui}</ThemeProvider>
+    </Provider>,
+  );
 }
 
 describe('<BetPanel />', () => {
