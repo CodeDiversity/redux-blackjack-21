@@ -11,7 +11,8 @@ export type Action =
   | { type: 'hand:double'; seatId: string; handIndex: number }
   | { type: 'hand:split'; seatId: string; handIndex: number }
   | { type: 'round:ready'; seatId: string }
-  | { type: 'round:start'; seatId: string };
+  | { type: 'round:start'; seatId: string }
+  | { type: 'round:advance'; seatId: string };
 
 export function createInitialState(roomId: string, seatCount: number, _roundNumber = 0): GameState {
   const seats: PlayerSeat[] = Array.from({ length: seatCount }, (_, i) => ({
@@ -21,6 +22,7 @@ export function createInitialState(roomId: string, seatCount: number, _roundNumb
     hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }],
     status: 'empty' as const,
     connectedAt: Date.now(),
+    lastBet: 0,
   }));
   return {
     roomId,
@@ -59,6 +61,7 @@ export function applyAction(state: GameState, action: Action, draw?: () => Card)
     case 'hand:split': return applySplit(state, action, drawCardOrThrow(draw));
     case 'round:ready': return applyReady(state, action);
     case 'round:start': return applyStartRound(state, drawCardOrThrow(draw));
+    case 'round:advance': return applyAdvance(state, action);
   }
 }
 
@@ -153,6 +156,25 @@ function applyReady(state: GameState, _a: { seatId: string }): GameState {
   };
 }
 
+function applyAdvance(state: GameState, _a: { seatId: string }): GameState {
+  if (state.phase !== 'settled') throw new GameError('INVALID_PHASE');
+  const emptyHand: Hand = { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false };
+  const players = state.players.map((p) => {
+    if (p.status === 'empty') return p;
+    if (p.status === 'sitting_out') return p;
+    if (p.bankroll === 0) return { ...p, hands: [emptyHand], status: 'sitting_out' as const };
+    return { ...p, hands: [emptyHand], status: 'betting' as const };
+  });
+  return {
+    ...state,
+    phase: 'betting',
+    activeSeat: null,
+    lastResult: null,
+    dealer: { ...emptyHand },
+    players,
+  };
+}
+
 function applyStartRound(state: GameState, draw: () => Card): GameState {
   if (state.phase !== 'lobby' && state.phase !== 'betting' && state.phase !== 'settled') throw new GameError('INVALID_PHASE');
   const hasUnbetSeated = state.players.some((p) => p.status !== 'empty' && p.hands[0].bet === 0);
@@ -217,12 +239,14 @@ function settle(state: GameState): GameState {
   const payouts: RoundResult['payouts'] = [];
   const players = state.players.map((p) => {
     if (p.status === 'empty' || p.status === 'sitting_out') return p;
+    // Record lastBet for each hand before reducing (split hands share the bet).
+    const lastBet = p.hands.reduce((max, h) => Math.max(max, h.bet), 0);
     const totalDelta = p.hands.reduce((sum, hand) => {
       const result = computePayout({ playerCards: hand.cards, dealerCards: state.dealer.cards, bet: hand.bet });
       payouts.push({ seatId: p.id, delta: result.delta, reason: result.reason });
       return sum + result.delta;
     }, 0);
-    return { ...p, bankroll: p.bankroll + totalDelta, status: 'stood' as const };
+    return { ...p, bankroll: p.bankroll + totalDelta, lastBet, status: 'stood' as const };
   });
   return {
     ...state,
