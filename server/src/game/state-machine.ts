@@ -1,5 +1,4 @@
 import { Config } from '../config';
-import { createShoe, drawCard, needsReshuffle, type Shoe } from './shoe';
 import { isBusted } from './hand';
 import { dealerShouldHit } from './dealer';
 import { computePayout } from './payout';
@@ -22,12 +21,11 @@ export function createInitialState(roomId: string, seatCount: number, _roundNumb
     status: 'empty' as const,
     connectedAt: Date.now(),
   }));
-  const shoe = createShoe(Config.SHOE_DECKS);
   return {
     roomId,
     phase: 'lobby',
-    shoeSize: shoe.cards.length,
-    cutCardIndex: shoe.cutCardIndex,
+    shoeSize: 0,
+    cutCardIndex: 0,
     players: seats,
     dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
     activeSeat: null,
@@ -46,14 +44,19 @@ function findSeat(state: GameState, seatId: string): { seat: PlayerSeat; index: 
   return { seat: state.players[index], index };
 }
 
-export function applyAction(state: GameState, action: Action): GameState {
+function drawCardOrThrow(draw?: () => Card): () => Card {
+  if (!draw) throw new Error('draw callback required for this action');
+  return draw;
+}
+
+export function applyAction(state: GameState, action: Action, draw?: () => Card): GameState {
   switch (action.type) {
     case 'bet:place': return applyBet(state, action);
-    case 'hand:hit': return applyHit(state, action);
-    case 'hand:stand': return applyStand(state, action);
-    case 'hand:double': return applyDouble(state, action);
-    case 'hand:split': return applySplit(state, action);
-    case 'round:start': return applyStartRound(state);
+    case 'hand:hit': return applyHit(state, action, drawCardOrThrow(draw));
+    case 'hand:stand': return applyStand(state, action, draw);
+    case 'hand:double': return applyDouble(state, action, drawCardOrThrow(draw));
+    case 'hand:split': return applySplit(state, action, drawCardOrThrow(draw));
+    case 'round:start': return applyStartRound(state, drawCardOrThrow(draw));
   }
 }
 
@@ -81,31 +84,30 @@ function activeHandCheck(state: GameState, seatId: string, handIndex: number): {
   return { seat, index, hand };
 }
 
-function applyHit(state: GameState, a: { seatId: string; handIndex: number }): GameState {
+function applyHit(state: GameState, a: { seatId: string; handIndex: number }, draw: () => Card): GameState {
   const { hand, index } = activeHandCheck(state, a.seatId, a.handIndex);
   if (hand.cards.length === 0) throw new GameError('HAND_LOCKED');
-  const shoe = currentShoe(state);
-  const [card, nextShoe] = drawCard(shoe);
+  const card = draw();
   const newCards: CardSlot[] = [...hand.cards, card];
   const busted = isBusted(newCards);
   const newHand: Hand = { ...hand, cards: newCards, busted };
   const seat = updateHandInSeat(state.players[index], a.handIndex, newHand);
-  return advanceTurn({ ...state, players: state.players.map((p, i) => i === index ? seat : p), shoeSize: nextShoe.cards.length });
+  return advanceTurn({ ...state, players: state.players.map((p, i) => i === index ? seat : p), shoeSize: state.shoeSize - 1 }, draw);
 }
 
-function applyStand(state: GameState, a: { seatId: string; handIndex: number }): GameState {
+function applyStand(state: GameState, a: { seatId: string; handIndex: number }, draw?: () => Card): GameState {
   const { hand, index } = activeHandCheck(state, a.seatId, a.handIndex);
   const newHand: Hand = { ...hand, stood: true };
   const seat = updateHandInSeat(state.players[index], a.handIndex, newHand);
-  return advanceTurn({ ...state, players: state.players.map((p, i) => i === index ? seat : p) });
+  // If the next step is dealer_turn, draw will be invoked then.
+  return advanceTurn({ ...state, players: state.players.map((p, i) => i === index ? seat : p) }, draw);
 }
 
-function applyDouble(state: GameState, a: { seatId: string; handIndex: number }): GameState {
+function applyDouble(state: GameState, a: { seatId: string; handIndex: number }, draw: () => Card): GameState {
   const { hand, index, seat } = activeHandCheck(state, a.seatId, a.handIndex);
   if (hand.cards.length > 2) throw new GameError('HAND_LOCKED');
   if (seat.bankroll < hand.bet) throw new GameError('INSUFFICIENT_FUNDS');
-  const shoe = currentShoe(state);
-  const [card, nextShoe] = drawCard(shoe);
+  const card = draw();
   const newCards: CardSlot[] = [...hand.cards, card];
   const newHand: Hand = { ...hand, cards: newCards, bet: hand.bet * 2, doubled: true, busted: isBusted(newCards) };
   const newSeat: PlayerSeat = {
@@ -113,10 +115,10 @@ function applyDouble(state: GameState, a: { seatId: string; handIndex: number })
     bankroll: seat.bankroll - hand.bet,
     hands: seat.hands.map((h, i) => i === a.handIndex ? newHand : h),
   };
-  return { ...state, players: state.players.map((p, i) => i === index ? newSeat : p), shoeSize: nextShoe.cards.length };
+  return { ...state, players: state.players.map((p, i) => i === index ? newSeat : p), shoeSize: state.shoeSize - 1 };
 }
 
-function applySplit(state: GameState, a: { seatId: string; handIndex: number }): GameState {
+function applySplit(state: GameState, a: { seatId: string; handIndex: number }, draw: () => Card): GameState {
   if (state.phase !== 'player_turn') throw new GameError('INVALID_PHASE');
   const { seat, index } = findSeat(state, a.seatId);
   if (state.activeSeat !== index) throw new GameError('NOT_YOUR_TURN');
@@ -127,38 +129,38 @@ function applySplit(state: GameState, a: { seatId: string; handIndex: number }):
   if (seat.bankroll < hand.bet) throw new GameError('INSUFFICIENT_FUNDS');
   if (seat.hands.length >= 2) throw new GameError('CANNOT_SPLIT');
   const acesRule = realCards[0].rank === 'A' && !Config.RESPLIT_ACES;
-  const leftHand: Hand = { ...hand, cards: [realCards[0]], bet: hand.bet };
-  const rightHand: Hand = { cards: [realCards[1]], bet: hand.bet, stood: acesRule, busted: false, isBlackjack: false, doubled: false };
+  const leftCard = draw();
+  const rightCard = draw();
+  const leftHand: Hand = { ...hand, cards: [realCards[0], leftCard], bet: hand.bet };
+  const rightHand: Hand = { cards: [realCards[1], rightCard], bet: hand.bet, stood: acesRule, busted: false, isBlackjack: false, doubled: false };
   const newSeat: PlayerSeat = {
     ...seat,
     bankroll: seat.bankroll - hand.bet,
     hands: [leftHand, rightHand],
   };
-  return { ...state, players: state.players.map((p, i) => i === index ? newSeat : p) };
+  return { ...state, players: state.players.map((p, i) => i === index ? newSeat : p), shoeSize: state.shoeSize - 2 };
 }
 
-function applyStartRound(state: GameState): GameState {
+function applyStartRound(state: GameState, draw: () => Card): GameState {
   if (state.phase !== 'lobby' && state.phase !== 'betting' && state.phase !== 'settled') throw new GameError('INVALID_PHASE');
-  const shoe = createShoe(Config.SHOE_DECKS);
-  const { players } = reshuffleIfNeeded(state, shoe);
-  const deck = currentShoe({ ...state, shoeSize: shoe.cards.length, cutCardIndex: shoe.cutCardIndex });
-  let cursor = deck;
-  const dealtPlayers = players.map((p) => {
+  let shoeSize = state.shoeSize;
+  // For each seated player with a bet, deal 2 cards
+  const dealtPlayers = state.players.map((p) => {
     if (p.hands[0].bet === 0) return p;
-    const [c1, after1] = drawCard(cursor);
-    const [c2, after2] = drawCard(after1);
-    cursor = after2;
+    const c1 = draw();
+    const c2 = draw();
+    shoeSize -= 2;
     return { ...p, hands: [{ ...p.hands[0], cards: [c1, c2] }], status: 'acting' as const };
   });
-  const [d1, afterD1] = drawCard(cursor);
-  const [d2, afterD2] = drawCard(afterD1);
-  cursor = afterD2;
-  const dealer: Hand = { cards: [d1, { hidden: true }], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false };
+  // Deal 2 to dealer, one face down
+  const d1 = draw();
+  const d2hidden: CardSlot = { hidden: true };
+  shoeSize -= 2;
+  const dealer: Hand = { cards: [d1, d2hidden], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false };
   return {
     ...state,
     phase: 'player_turn',
-    shoeSize: cursor.cards.length,
-    cutCardIndex: cursor.cutCardIndex,
+    shoeSize,
     players: dealtPlayers,
     dealer,
     activeSeat: dealtPlayers.findIndex((p) => p.status === 'acting'),
@@ -167,7 +169,7 @@ function applyStartRound(state: GameState): GameState {
   };
 }
 
-function advanceTurn(state: GameState): GameState {
+function advanceTurn(state: GameState, draw?: () => Card): GameState {
   if (state.activeSeat === null) return state;
   const seat = state.players[state.activeSeat];
   const currentHand = seat.hands[seat.hands.length - 1];
@@ -180,20 +182,21 @@ function advanceTurn(state: GameState): GameState {
       return { ...state, activeSeat: i };
     }
   }
-  return enterDealerTurn(state);
+  return enterDealerTurn(state, drawCardOrThrow(draw));
 }
 
-function enterDealerTurn(state: GameState): GameState {
-  const dealer = { ...state.dealer, cards: state.dealer.cards.map((c) => ('hidden' in c ? { suit: '♠' as const, rank: 'A' as const } : c)) };
-  let cursor = currentShoe({ ...state, dealer });
-  const newCards: CardSlot[] = [...dealer.cards];
-  while (dealerShouldHit(newCards as CardSlot[])) {
-    const [c, next] = drawCard(cursor);
-    newCards.push(c);
-    cursor = next;
+function enterDealerTurn(state: GameState, draw: () => Card): GameState {
+  // Replace the hidden hole card with a real drawn card
+  const revealedCards: CardSlot[] = state.dealer.cards.map((c) => ('hidden' in c ? draw() : c));
+  // Count actual hidden replacements for shoe decrement
+  const hiddenReplacements = state.dealer.cards.filter((c) => 'hidden' in c).length;
+  let shoeSize = state.shoeSize - hiddenReplacements;
+  while (dealerShouldHit(revealedCards)) {
+    revealedCards.push(draw());
+    shoeSize -= 1;
   }
-  const finalDealer: Hand = { ...dealer, cards: newCards, busted: isBusted(newCards) };
-  return settle({ ...state, phase: 'dealer_turn', dealer: finalDealer, shoeSize: cursor.cards.length });
+  const finalDealer: Hand = { ...state.dealer, cards: revealedCards, busted: isBusted(revealedCards) };
+  return settle({ ...state, phase: 'dealer_turn', dealer: finalDealer, shoeSize });
 }
 
 function settle(state: GameState): GameState {
@@ -217,16 +220,4 @@ function settle(state: GameState): GameState {
 
 function updateHandInSeat(seat: PlayerSeat, handIndex: number, newHand: Hand): PlayerSeat {
   return { ...seat, hands: seat.hands.map((h, i) => i === handIndex ? newHand : h) };
-}
-
-function currentShoe(state: GameState): Shoe {
-  return { cards: new Array(state.shoeSize).fill({ suit: '♠', rank: 'A' }), cutCardIndex: state.cutCardIndex };
-}
-
-function reshuffleIfNeeded(state: GameState, shoe: Shoe): { players: PlayerSeat[]; shoe: Shoe } {
-  if (!needsReshuffle(shoe) && state.roundNumber > 0) {
-    return { players: state.players, shoe };
-  }
-  const fresh = createShoe(Config.SHOE_DECKS);
-  return { players: state.players, shoe: fresh };
 }

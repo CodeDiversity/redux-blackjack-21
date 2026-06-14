@@ -1,29 +1,36 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDispatch } from 'react-redux';
 import { getSocket } from '../socket/client';
+import { selfSeatAssigned } from '../store/connection.slice';
 
 export function Home() {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const dispatch = useDispatch();
 
   const create = () => {
     if (!name.trim()) { setError('Please enter a name'); return; }
     getSocket().emit('room:create', { name: name.trim() }, (resp: any) => {
-      if (resp?.seatId) navigate(`/room/${resp.roomId ?? ''}`);
-      else setError(resp?.code ?? 'Failed to create room');
+      if (resp?.seatId) {
+        dispatch(selfSeatAssigned(resp.seatId));
+        // roomId is in the lobby:state event; read it from there via a one-shot listener:
+        getSocket().once('lobby:state', (lobby: { roomId: string }) => navigate(`/room/${lobby.roomId}`));
+      } else setError(resp?.code ?? 'Failed to create room');
     });
-    // roomId is in the lobby:state event; read it from there via a one-shot listener:
-    getSocket().once('lobby:state', (lobby: { roomId: string }) => navigate(`/room/${lobby.roomId}`));
   };
 
   const join = () => {
     if (!name.trim()) { setError('Please enter a name'); return; }
     if (!code.trim()) { setError('Please enter a room code'); return; }
-    getSocket().emit('room:join', { roomId: code.trim().toUpperCase(), name: name.trim() }, (resp: any) => {
-      if (resp?.seatId) navigate(`/room/${code.trim().toUpperCase()}`);
-      else setError(resp?.code ?? 'Failed to join');
+    const roomCode = code.trim().toUpperCase();
+    getSocket().emit('room:join', { roomId: roomCode, name: name.trim() }, (resp: any) => {
+      if (resp?.seatId) {
+        dispatch(selfSeatAssigned(resp.seatId));
+        navigate(`/room/${roomCode}`);
+      } else setError(resp?.code ?? 'Failed to join');
     });
     getSocket().once('error', (err: { message: string }) => setError(err.message));
   };

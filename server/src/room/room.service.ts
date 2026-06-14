@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Config } from '../config';
 import { createInitialState, GameError, applyAction, type Action } from '../game/state-machine';
 import { generateRoomCode } from './room-code';
-import type { GameState, LobbyState, PlayerSeat } from '../shared/types';
+import type { Card, GameState, LobbyState, PlayerSeat } from '../shared/types';
 
 @Injectable()
 export class RoomService {
@@ -44,10 +44,10 @@ export class RoomService {
     return { state: room.state, destroyed: false, hostId };
   }
 
-  apply(roomId: string, action: Action): GameState {
+  apply(roomId: string, action: Action, draw?: () => Card): GameState {
     const room = this.rooms.get(roomId);
     if (!room) throw new GameError('ROOM_NOT_FOUND');
-    const next = applyAction(room.state, action);
+    const next = applyAction(room.state, action, draw);
     room.state = next;
     return next;
   }

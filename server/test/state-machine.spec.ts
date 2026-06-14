@@ -1,6 +1,6 @@
 import { createInitialState, applyAction } from '../src/game/state-machine';
 import { Config } from '../src/config';
-import type { GameState } from '../src/shared/types';
+import type { Card, GameState } from '../src/shared/types';
 
 const newRoom = (): GameState => ({ ...createInitialState('ROOM1', Config.SEAT_COUNT, 1), phase: 'betting' });
 
@@ -43,7 +43,12 @@ describe('applyAction: hand:hit', () => {
     let state = newRoom();
     state = { ...state, phase: 'player_turn', activeSeat: 0 };
     state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting', hands: [{ ...p.hands[0], cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }] }] } : p) };
-    const next = applyAction(state, { type: 'hand:hit', seatId: state.players[0].id, handIndex: 0 });
+    const deck: Card[] = [
+      { suit: '♦', rank: '7' },                              // hit card
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    const next = applyAction(state, { type: 'hand:hit', seatId: state.players[0].id, handIndex: 0 }, draw);
     expect(next.players[0].hands[0].cards.length).toBe(3);
   });
 });
@@ -52,8 +57,18 @@ describe('applyAction: hand:stand', () => {
   it('marks the hand stood and advances the turn', () => {
     let state = newRoom();
     state = { ...state, phase: 'player_turn', activeSeat: 0 };
-    state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting', hands: [{ ...p.hands[0], cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }] }] } : p) };
-    const next = applyAction(state, { type: 'hand:stand', seatId: state.players[0].id, handIndex: 0 });
+    state = {
+      ...state,
+      players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting', hands: [{ ...p.hands[0], cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }] }] } : p),
+      dealer: { ...state.dealer, cards: [{ suit: '♠', rank: '10' }, { hidden: true }] },
+    };
+    // Need deck: dealer hole card reveal + maybe more
+    const deck: Card[] = [
+      { suit: '♣', rank: 'K' },                              // dealer hole reveal (total 20, stands)
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    const next = applyAction(state, { type: 'hand:stand', seatId: state.players[0].id, handIndex: 0 }, draw);
     expect(next.players[0].hands[0].stood).toBe(true);
   });
 });
@@ -63,7 +78,12 @@ describe('applyAction: hand:double', () => {
     let state = newRoom();
     state = { ...state, phase: 'player_turn', activeSeat: 0 };
     state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting', bankroll: 1000, hands: [{ ...p.hands[0], bet: 100, cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }] }] } : p) };
-    const next = applyAction(state, { type: 'hand:double', seatId: state.players[0].id, handIndex: 0 });
+    const deck: Card[] = [
+      { suit: '♦', rank: '3' },                              // double card
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    const next = applyAction(state, { type: 'hand:double', seatId: state.players[0].id, handIndex: 0 }, draw);
     expect(next.players[0].hands[0].bet).toBe(200);
     expect(next.players[0].hands[0].doubled).toBe(true);
     expect(next.players[0].hands[0].cards.length).toBe(3);
@@ -76,10 +96,17 @@ describe('applyAction: hand:split', () => {
     let state = newRoom();
     state = { ...state, phase: 'player_turn', activeSeat: 0 };
     state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting', bankroll: 1000, hands: [{ ...p.hands[0], bet: 100, cards: [{ suit: '♠', rank: '8' }, { suit: '♥', rank: '8' }] }] } : p) };
-    const next = applyAction(state, { type: 'hand:split', seatId: state.players[0].id, handIndex: 0 });
+    // Need deck: 2 cards for split, then dealer cards
+    const deck: Card[] = [
+      { suit: '♣', rank: '2' }, { suit: '♦', rank: '9' },    // split cards
+      { suit: '♣', rank: 'K' }, { suit: '♣', rank: 'K' },    // dealer cards
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    const next = applyAction(state, { type: 'hand:split', seatId: state.players[0].id, handIndex: 0 }, draw);
     expect(next.players[0].hands.length).toBe(2);
-    expect(next.players[0].hands[0].cards.length).toBe(1);
-    expect(next.players[0].hands[1].cards.length).toBe(1);
+    expect(next.players[0].hands[0].cards.length).toBe(2);
+    expect(next.players[0].hands[1].cards.length).toBe(2);
     expect(next.players[0].bankroll).toBe(900);
   });
 
@@ -87,6 +114,9 @@ describe('applyAction: hand:split', () => {
     let state = newRoom();
     state = { ...state, phase: 'player_turn', activeSeat: 0 };
     state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting', hands: [{ ...p.hands[0], cards: [{ suit: '♠', rank: '8' }, { suit: '♥', rank: '9' }] }] } : p) };
-    expect(() => applyAction(state, { type: 'hand:split', seatId: state.players[0].id, handIndex: 0 })).toThrow('CANNOT_SPLIT');
+    const deck: Card[] = [];
+    let i = 0;
+    const draw = () => deck[i++];
+    expect(() => applyAction(state, { type: 'hand:split', seatId: state.players[0].id, handIndex: 0 }, draw)).toThrow('CANNOT_SPLIT');
   });
 });

@@ -26,7 +26,7 @@ describe('gateway integration: 2-player full round', () => {
 
   afterAll(async () => { await app.close(); });
 
-  it('walks two clients through create → join → bet → deal → hit → stand → settle', async () => {
+  it('walks two clients through create → join → bet → deal → stand → stand → settle', async () => {
     const host = io(url, { transports: ['websocket'], forceNew: true });
     const guest = io(url, { transports: ['websocket'], forceNew: true });
     await Promise.all([new Promise<void>((r) => host.on('connect', () => r())), new Promise<void>((r) => guest.on('connect', () => r()))]);
@@ -55,7 +55,28 @@ describe('gateway integration: 2-player full round', () => {
     const startedPromise = listen<GameState>(host, 'game:state', (s) => s.phase !== 'lobby' && s.phase !== 'betting');
     host.emit('round:start');
     const started = await startedPromise;
-    expect(['player_turn', 'dealer_turn', 'settled']).toContain(started.phase);
+    expect(started.phase).toBe('player_turn');
+    expect(started.activeSeat).not.toBeNull();
+
+    // Listen for the next phase on the host. We expect that after both players stand
+    // the phase becomes 'dealer_turn' then 'settled'.
+    const settledPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'settled');
+
+    // Drive the round: each player stands in turn.
+    // The active seat progresses seat 0 → seat 1 → dealer_turn → settled.
+    // We do not need to know which player is active because each player's hand:stand
+    // is rejected (NOT_YOUR_TURN) if it's not their turn. We'll fire stand from both
+    // and use the host's state stream to know when the phase changes.
+    for (let i = 0; i < 4; i++) {
+      host.emit('hand:stand', { handIndex: 0 });
+      guest.emit('hand:stand', { handIndex: 0 });
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    const settled = await settledPromise;
+    expect(settled.phase).toBe('settled');
+    expect(settled.lastResult).toBeTruthy();
+    expect(settled.lastResult!.payouts.length).toBeGreaterThan(0);
 
     host.disconnect();
     guest.disconnect();

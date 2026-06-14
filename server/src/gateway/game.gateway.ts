@@ -73,8 +73,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const ctx = this.rooms.roomForSocket(client.id);
     if (!ctx) return this.sendError(client, 'NOT_YOUR_TURN');
     try {
-      const state = this.rooms.apply(ctx.roomId, { type: 'round:start', seatId: ctx.seatId });
-      this.games.ensureShoe(ctx.roomId, state);
+      this.games.ensureShoe(ctx.roomId, this.rooms.getState(ctx.roomId)!);
+      const draw = () => this.games.draw(ctx.roomId).card;
+      const state = this.rooms.apply(ctx.roomId, { type: 'round:start', seatId: ctx.seatId }, draw);
       this.broadcastAll(ctx.roomId, state);
     } catch (e) {
       if (e instanceof GameError) return this.sendError(client, e.code as any);
@@ -119,7 +120,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const ctx = this.rooms.roomForSocket(client.id);
     if (!ctx) return this.sendError(client, 'NOT_YOUR_TURN');
     try {
-      const state = this.rooms.apply(ctx.roomId, { ...action, seatId: ctx.seatId });
+      this.games.ensureShoe(ctx.roomId, this.rooms.getState(ctx.roomId)!);
+      const draw = () => this.games.draw(ctx.roomId).card;
+      const state = this.rooms.apply(ctx.roomId, { ...action, seatId: ctx.seatId }, draw);
       this.broadcastAll(ctx.roomId, state);
     } catch (e) {
       if (e instanceof GameError) return this.sendError(client, e.code as any);
