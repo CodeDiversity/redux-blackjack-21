@@ -291,6 +291,20 @@ export const machine = setup({
         ),
       };
     }),
+    assignAdvance: assign(({ context }) => {
+      const emptyHand: Hand = { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false };
+      return {
+        __actionCount: context.__actionCount + 1,
+        dealer: { ...emptyHand },
+        players: context.players.map((p) => {
+          if (p.status === 'empty' || p.status === 'sitting_out') return p;
+          if (p.bankroll === 0) return { ...p, hands: [emptyHand], status: 'sitting_out' as const };
+          return { ...p, hands: [emptyHand], status: 'betting' as const };
+        }),
+        activeSeat: null,
+        lastResult: null,
+      };
+    }),
   },
 }).createMachine({
   id: 'blackjack',
@@ -314,7 +328,9 @@ export const machine = setup({
       },
     },
     dealer_turn: { on: {} },
-    settled: { on: {} },
+    settled: {
+      on: { 'round:advance': { target: 'betting', actions: 'assignAdvance' } },
+    },
   },
 });
 
