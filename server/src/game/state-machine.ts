@@ -58,12 +58,13 @@ export function applyAction(state: GameState, action: Action): GameState {
 }
 
 function applyBet(state: GameState, a: { seatId: string; amount: number }): GameState {
-  if (state.phase !== 'betting') throw new GameError('INVALID_PHASE');
+  if (state.phase !== 'lobby' && state.phase !== 'betting') throw new GameError('INVALID_PHASE');
   if (a.amount < Config.MIN_BET || a.amount > Config.MAX_BET) throw new GameError('BET_OUT_OF_RANGE');
   const { seat, index } = findSeat(state, a.seatId);
   if (seat.bankroll < a.amount) throw new GameError('INSUFFICIENT_FUNDS');
   return {
     ...state,
+    phase: 'betting',
     players: state.players.map((p, i) =>
       i === index ? { ...p, hands: [{ ...p.hands[0], bet: a.amount }], status: 'betting' as const } : p),
   };
@@ -137,7 +138,7 @@ function applySplit(state: GameState, a: { seatId: string; handIndex: number }):
 }
 
 function applyStartRound(state: GameState): GameState {
-  if (state.phase !== 'lobby' && state.phase !== 'settled') throw new GameError('INVALID_PHASE');
+  if (state.phase !== 'lobby' && state.phase !== 'betting' && state.phase !== 'settled') throw new GameError('INVALID_PHASE');
   const shoe = createShoe(Config.SHOE_DECKS);
   const { players } = reshuffleIfNeeded(state, shoe);
   const deck = currentShoe({ ...state, shoeSize: shoe.cards.length, cutCardIndex: shoe.cutCardIndex });
