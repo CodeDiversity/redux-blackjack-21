@@ -240,7 +240,7 @@ The XState graph is cleaner with `round:dealerPlay` as an explicit event. The st
 
 ## Error Handling
 
-The public `GameError` exception API is preserved exactly: same class, same 6 codes (`NOT_YOUR_TURN`, `INVALID_PHASE`, `BET_OUT_OF_RANGE`, `INSUFFICIENT_FUNDS`, `CANNOT_SPLIT`, `HAND_LOCKED`, `NOT_READY`).
+The public `GameError` exception API is preserved exactly: same class, same 7 codes (`NOT_YOUR_TURN`, `INVALID_PHASE`, `BET_OUT_OF_RANGE`, `INSUFFICIENT_FUNDS`, `CANNOT_SPLIT`, `HAND_LOCKED`, `NOT_READY`).
 
 ### How a `GameError` gets thrown
 
@@ -287,7 +287,7 @@ A new file `server/test/state-machine-xstate.spec.ts` with focused tests on the 
 - **Draw bridge** (~5 tests): `prepareEvent` for each event type attaches the right number of cards; throws `DRAW_REQUIRED` when `draw` is missing; `computeDealerEvent` pre-computes the dealer's hand correctly.
 - **Snapshot roundtrip** (~2 tests): `toSnapshot` then `fromSnapshot` is identity (modulo `roomId` injection) for any `GameState` produced by the machine.
 
-Total: ~20-22 new tests. Combined with the 24 existing tests, the state machine has ~45-46 unit tests.
+Total: ~20-22 new tests. Combined with the 24 existing tests, the state machine has ~44-46 unit tests.
 
 ### Verification gates (run after every commit)
 
@@ -330,7 +330,7 @@ The migration is a single, atomic refactor on the server side. No client changes
 - [ ] `state-machine.ts` is more readable: the XState graph is top-down, declarative, and the imperative phase checks are gone.
 - [ ] `applyAction` wrapper is a thin pass-through (≤50 lines of orchestration logic; the rest is the XState machine definition).
 - [ ] Public `applyAction` API, `GameState` shape, `Action` type, and `GameError` class are byte-identical to the current implementation.
-- [ ] The XState machine is the single source of truth for state transitions. No other file knows the rules of blackjack.
+- [ ] All state-transition rules and the rules of blackjack live in the XState machine + draw bridge. `dealer.ts` and `payout.ts` export reusable pure functions but contain no game-flow logic.
 
 ## Open Questions
 
