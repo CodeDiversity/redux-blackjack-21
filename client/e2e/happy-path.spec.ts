@@ -1,6 +1,6 @@
 import { test, expect, chromium } from '@playwright/test';
 
-test('two players can play a full round', async () => {
+test('two players can play two full rounds with rebet', async () => {
   const browser = await chromium.launch();
   const host = await browser.newContext();
   const guest = await browser.newContext();
@@ -9,7 +9,6 @@ test('two players can play a full round', async () => {
   await hostPage.goto('/');
   await hostPage.fill('input[placeholder="Your name"]', 'Alice');
   await hostPage.click('button:has-text("Create Room")');
-  // Wait for room code in URL.
   await hostPage.waitForURL(/\/room\//);
   const roomUrl = hostPage.url();
   const code = roomUrl.split('/room/')[1];
@@ -21,20 +20,46 @@ test('two players can play a full round', async () => {
   await guestPage.click('button:has-text("Join")');
   await guestPage.waitForURL(/\/room\//);
 
-  // Host transitions lobby → betting phase.
+  // ───── ROUND 1 ─────
   await hostPage.click('button:has-text("Begin Betting")');
   await hostPage.waitForSelector('.bet-panel');
 
-  // Both place a bet.
   await hostPage.fill('.bet-panel input', '50');
   await hostPage.click('button:has-text("Place Bet")');
   await guestPage.fill('.bet-panel input', '50');
   await guestPage.click('button:has-text("Place Bet")');
 
-  // Host deals the round.
   await hostPage.click('button:has-text("Deal")');
+  await hostPage.waitForSelector('.action-panel', { timeout: 10_000 });
 
-  // Wait for the action panel to appear (someone's turn).
+  // Both stand until settled. Use a polling loop; one of the two attempts per round
+  // is the active seat.
+  for (let i = 0; i < 4; i++) {
+    await hostPage.evaluate(() => { document.querySelectorAll('button').forEach((b) => { if ((b.textContent ?? '').trim() === 'Stand' && !(b as HTMLButtonElement).disabled) b.click(); }); });
+    await guestPage.evaluate(() => { document.querySelectorAll('button').forEach((b) => { if ((b.textContent ?? '').trim() === 'Stand' && !(b as HTMLButtonElement).disabled) b.click(); }); });
+    await hostPage.waitForTimeout(50);
+  }
+
+  // Wait for the result overlay on the host.
+  await hostPage.waitForSelector('.result-overlay', { timeout: 10_000 });
+
+  // ───── ADVANCE TO NEXT HAND ─────
+  // Host sees the Next Hand button; guest does not.
+  await expect(hostPage.locator('button:has-text("Next Hand")')).toBeVisible();
+  await expect(guestPage.locator('button:has-text("Next Hand")')).toHaveCount(0);
+
+  await hostPage.click('button:has-text("Next Hand")');
+  await hostPage.waitForSelector('.bet-panel', { timeout: 5_000 });
+
+  // ───── ROUND 2: rebet ─────
+  // Both players should see the Rebet button since lastBet=50 and bankroll is positive.
+  await expect(hostPage.locator('button:has-text("Rebet $50")')).toBeVisible();
+  await expect(guestPage.locator('button:has-text("Rebet $50")')).toBeVisible();
+
+  await hostPage.click('button:has-text("Rebet $50")');
+  await guestPage.click('button:has-text("Rebet $50")');
+
+  await hostPage.click('button:has-text("Deal")');
   await hostPage.waitForSelector('.action-panel', { timeout: 10_000 });
 
   await browser.close();
