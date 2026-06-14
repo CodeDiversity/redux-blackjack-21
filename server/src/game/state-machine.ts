@@ -1,4 +1,4 @@
-import { setup, createActor, assign } from 'xstate';
+import { setup, createActor, assign, and } from 'xstate';
 import { Config } from '../config';
 import type { Card, CardSlot, GameState, Hand, PlayerSeat, RoundResult } from '../shared/types';
 import { isBusted } from './hand';
@@ -181,36 +181,62 @@ function inferRejectionReason(state: GameState, action: Action): string {
 
 // --- XState machine (states and events; guards and actions added in later tasks)
 
+function makeGuardFn(g: GuardDef) {
+  return ({ context, event }: { context: GameContext; event: GameEvent }) => {
+    // Adapt XState (context, event) → our (state, action) signature.
+    // The XState phase is not in context — but our guards reference s.phase,
+    // so we need to derive it. Since the XState machine guards are only used
+    // in their own state context, we extract it from the snapshot value.
+    // Note: the actionGuards map drives the check order; the inner phase
+    // check uses the XState machine's current state value.
+    // We don't have direct access to the state value here, so we leave it as
+    // a placeholder; the predicate that depends on phase will rely on the
+    // calling state being correct (XState only invokes guards in matching states).
+    const fakeState: GameState = {
+      roomId: '',
+      phase: 'lobby',  // unused by predicates when invoked inside the right XState state
+      shoeSize: context.shoeSize,
+      cutCardIndex: context.cutCardIndex,
+      players: context.players,
+      dealer: context.dealer,
+      activeSeat: context.activeSeat,
+      roundNumber: context.roundNumber,
+      lastResult: context.lastResult,
+    };
+    // Coerce the enriched event to the user-action shape.
+    const action = event as unknown as Action;
+    return g.predicate(fakeState, action);
+  };
+}
+
 export const machine = setup({
   types: {
     context: {} as GameContext,
     events: {} as GameEvent,
   },
   guards: {
-    ...Object.fromEntries(
-      guards.map((g) => [g.name, ({ context, event }: { context: GameContext; event: GameEvent }) => {
-        // Adapt XState (context, event) → our (state, action) signature.
-        const fakeState: GameState = {
-          roomId: '',
-          phase: 'lobby',  // unused by predicates; the actionGuards map drives the check order
-          shoeSize: context.shoeSize,
-          cutCardIndex: context.cutCardIndex,
-          players: context.players,
-          dealer: context.dealer,
-          activeSeat: context.activeSeat,
-          roundNumber: context.roundNumber,
-          lastResult: context.lastResult,
-        };
-        // Coerce the enriched event to the user-action shape.
-        const action = event as unknown as Action;
-        return g.predicate(fakeState, action);
-      }]),
-    ),
-    allHandsActed: ({ context }) => {
-      if (context.activeSeat === null) return true;
-      const seat = context.players[context.activeSeat];
-      if (!seat) return true;
-      return seat.hands.every((h) => h.stood || h.busted || h.doubled || h.cards.length === 0);
+    isLobbyOrBetting: makeGuardFn(guards.find((g) => g.name === 'isLobbyOrBetting')!),
+    isPlayerTurnPhase: makeGuardFn(guards.find((g) => g.name === 'isPlayerTurnPhase')!),
+    isLobbyOrSettled: makeGuardFn(guards.find((g) => g.name === 'isLobbyOrSettled')!),
+    isSettled: makeGuardFn(guards.find((g) => g.name === 'isSettled')!),
+    isValidBetAmount: makeGuardFn(guards.find((g) => g.name === 'isValidBetAmount')!),
+    hasSufficientFundsForBet: makeGuardFn(guards.find((g) => g.name === 'hasSufficientFundsForBet')!),
+    isActiveSeat: makeGuardFn(guards.find((g) => g.name === 'isActiveSeat')!),
+    isHandActionable: makeGuardFn(guards.find((g) => g.name === 'isHandActionable')!),
+    isDoubleableHand: makeGuardFn(guards.find((g) => g.name === 'isDoubleableHand')!),
+    canSplitHand: makeGuardFn(guards.find((g) => g.name === 'canSplitHand')!),
+    hasSufficientFundsForDouble: makeGuardFn(guards.find((g) => g.name === 'hasSufficientFundsForDouble')!),
+    hasSufficientFundsForSplit: makeGuardFn(guards.find((g) => g.name === 'hasSufficientFundsForSplit')!),
+    noAcesRuleForSplit: makeGuardFn(guards.find((g) => g.name === 'noAcesRuleForSplit')!),
+    allPlayersReady: makeGuardFn(guards.find((g) => g.name === 'allPlayersReady')!),
+    allHandsActed: ({ context, event }: { context: GameContext; event: GameEvent }) => {
+      // Only fire the auto-transition after a hand:* event that completed a hand.
+      // (Don't fire for hand:double / hand:split, which leave the player with a hand to act on.)
+      if (event.type === 'hand:double' || event.type === 'hand:split') return false;
+      if (context.activeSeat === null) return false;
+      const acting = context.players.filter((p) => p.status === 'acting');
+      if (acting.length === 0) return false;
+      return acting.every((p) => p.hands.every((h) => h.stood || h.busted || h.doubled || h.cards.length === 0));
     },
   },
   actions: {
@@ -347,6 +373,13 @@ export const machine = setup({
         ),
       };
     }),
+    assignReady: assign(({ context }) => {
+      return {
+        __actionCount: context.__actionCount + 1,
+        activeSeat: null,
+        lastResult: null,
+      };
+    }),
   },
 }).createMachine({
   id: 'blackjack',
@@ -354,20 +387,20 @@ export const machine = setup({
   context: initialContext(),
   states: {
     lobby: {
-      on: { 'round:ready': { target: 'betting' } },
+      on: { 'round:ready': { target: 'betting', actions: 'assignReady' } },
     },
     betting: {
       on: {
-        'bet:place': { actions: 'assignBet' },
-        'round:start': { target: 'player_turn', actions: 'assignDeal' },
+        'bet:place': { actions: 'assignBet', guard: and(['isValidBetAmount', 'hasSufficientFundsForBet']) },
+        'round:start': { target: 'player_turn', actions: 'assignDeal', guard: 'allPlayersReady' },
       },
     },
     player_turn: {
       on: {
-        'hand:hit': { actions: 'assignHit' },
-        'hand:stand': { actions: 'assignStand' },
-        'hand:double': { actions: 'assignDouble' },
-        'hand:split': { actions: 'assignSplit' },
+        'hand:hit': { actions: 'assignHit', guard: and(['isActiveSeat', 'isHandActionable']) },
+        'hand:stand': { actions: 'assignStand', guard: and(['isActiveSeat', 'isHandActionable']) },
+        'hand:double': { actions: 'assignDouble', guard: and(['isActiveSeat', 'isDoubleableHand', 'hasSufficientFundsForDouble']) },
+        'hand:split': { actions: 'assignSplit', guard: and(['isActiveSeat', 'canSplitHand', 'hasSufficientFundsForSplit', 'noAcesRuleForSplit']) },
       },
       always: [{ guard: 'allHandsActed', target: 'dealer_turn' }],
     },
@@ -375,7 +408,10 @@ export const machine = setup({
       on: { 'round:dealerPlay': { target: 'settled', actions: 'assignDealerHand' } },
     },
     settled: {
-      on: { 'round:advance': { target: 'betting', actions: 'assignAdvance' } },
+      on: {
+        'round:ready': { target: 'betting', actions: 'assignReady' },
+        'round:advance': { target: 'betting', actions: 'assignAdvance' },
+      },
       entry: 'assignSettle',
     },
   },
