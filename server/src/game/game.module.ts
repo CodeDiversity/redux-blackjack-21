@@ -1,3 +1,8 @@
 import { Module } from '@nestjs/common';
-@Module({})
+import { GameService } from './game.service';
+
+@Module({
+  providers: [GameService],
+  exports: [GameService],
+})
 export class GameModule {}
