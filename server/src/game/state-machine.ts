@@ -186,25 +186,33 @@ export const machine = setup({
     context: {} as GameContext,
     events: {} as GameEvent,
   },
-  guards: Object.fromEntries(
-    guards.map((g) => [g.name, ({ context, event }: { context: GameContext; event: GameEvent }) => {
-      // Adapt XState (context, event) → our (state, action) signature.
-      const fakeState: GameState = {
-        roomId: '',
-        phase: 'lobby',  // unused by predicates; the actionGuards map drives the check order
-        shoeSize: context.shoeSize,
-        cutCardIndex: context.cutCardIndex,
-        players: context.players,
-        dealer: context.dealer,
-        activeSeat: context.activeSeat,
-        roundNumber: context.roundNumber,
-        lastResult: context.lastResult,
-      };
-      // Coerce the enriched event to the user-action shape.
-      const action = event as unknown as Action;
-      return g.predicate(fakeState, action);
-    }]),
-  ),
+  guards: {
+    ...Object.fromEntries(
+      guards.map((g) => [g.name, ({ context, event }: { context: GameContext; event: GameEvent }) => {
+        // Adapt XState (context, event) → our (state, action) signature.
+        const fakeState: GameState = {
+          roomId: '',
+          phase: 'lobby',  // unused by predicates; the actionGuards map drives the check order
+          shoeSize: context.shoeSize,
+          cutCardIndex: context.cutCardIndex,
+          players: context.players,
+          dealer: context.dealer,
+          activeSeat: context.activeSeat,
+          roundNumber: context.roundNumber,
+          lastResult: context.lastResult,
+        };
+        // Coerce the enriched event to the user-action shape.
+        const action = event as unknown as Action;
+        return g.predicate(fakeState, action);
+      }]),
+    ),
+    allHandsActed: ({ context }) => {
+      if (context.activeSeat === null) return true;
+      const seat = context.players[context.activeSeat];
+      if (!seat) return true;
+      return seat.hands.every((h) => h.stood || h.busted || h.doubled || h.cards.length === 0);
+    },
+  },
   actions: {
     assignDeal: assign(({ context, event }) => {
       if (event.type !== 'round:start') return {};
@@ -305,6 +313,29 @@ export const machine = setup({
         lastResult: null,
       };
     }),
+    assignDealerHand: assign(({ context, event }) => {
+      if (event.type !== 'round:dealerPlay') return {};
+      const hiddenCount = context.dealer.cards.filter((c) => 'hidden' in c).length;
+      return {
+        __actionCount: context.__actionCount + 1,
+        shoeSize: context.shoeSize - (event.dealerFinalHand.length - context.dealer.cards.length) - hiddenCount,
+        dealer: { ...context.dealer, cards: event.dealerFinalHand, busted: isBusted(event.dealerFinalHand) },
+      };
+    }),
+    assignSettle: assign(({ context }) => {
+      const payouts: RoundResult['payouts'] = [];
+      const players = context.players.map((p) => {
+        if (p.status === 'empty' || p.status === 'sitting_out') return p;
+        const lastBet = p.hands.reduce((max, h) => Math.max(max, h.bet), 0);
+        const totalDelta = p.hands.reduce((sum, hand) => {
+          const result = computePayout({ playerCards: hand.cards, dealerCards: context.dealer.cards, bet: hand.bet });
+          payouts.push({ seatId: p.id, delta: result.delta, reason: result.reason });
+          return sum + result.delta;
+        }, 0);
+        return { ...p, bankroll: p.bankroll + totalDelta, lastBet, status: 'stood' as const };
+      });
+      return { __actionCount: context.__actionCount + 1, players, lastResult: { payouts } };
+    }),
   },
 }).createMachine({
   id: 'blackjack',
@@ -326,10 +357,14 @@ export const machine = setup({
         'hand:double': { actions: 'assignDouble' },
         'hand:split': { actions: 'assignSplit' },
       },
+      always: [{ guard: 'allHandsActed', target: 'dealer_turn' }],
     },
-    dealer_turn: { on: {} },
+    dealer_turn: {
+      on: { 'round:dealerPlay': { target: 'settled', actions: 'assignDealerHand' } },
+    },
     settled: {
       on: { 'round:advance': { target: 'betting', actions: 'assignAdvance' } },
+      entry: 'assignSettle',
     },
   },
 });
