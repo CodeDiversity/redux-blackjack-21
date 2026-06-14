@@ -1,12 +1,18 @@
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import styled from 'styled-components';
 import { getSocket } from '../socket/client';
 import { Lobby } from '../components/Lobby';
 import { TableView } from '../components/TableView';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { ErrorToast } from '../components/ErrorToast';
 import type { RootState } from '../store';
+
+const Page = styled.div`
+  min-height: 100vh;
+  background: ${({ theme }) => theme.colors.entranceBg};
+`;
 
 export function Table() {
   const { code } = useParams<{ code: string }>();
@@ -26,6 +32,6 @@ export function Table() {
     return () => { socket.off('connect', onConnect); };
   }, [code]);
 
-  if (phase === 'lobby') return <div className="table-page"><ConnectionStatus /><Lobby /></div>;
-  return <div className="table-page"><ConnectionStatus /><TableView /><ErrorToast /></div>;
+  if (phase === 'lobby') return <Page><ConnectionStatus /><Lobby /></Page>;
+  return <Page><ConnectionStatus /><TableView /><ErrorToast /></Page>;
 }
