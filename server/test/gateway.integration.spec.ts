@@ -81,4 +81,31 @@ describe('gateway integration: 2-player full round', () => {
     host.disconnect();
     guest.disconnect();
   }, 15_000);
+
+  it('rejects round:start when no one has bet and round:ready gates the flow into betting', async () => {
+    const host = io(url, { transports: ['websocket'], forceNew: true });
+    await new Promise<void>((r) => host.on('connect', () => r()));
+
+    const lobbyPromise = listen<LobbyState>(host, 'lobby:state');
+    await new Promise<void>((resolve) => {
+      host.emit('room:create', { name: 'Alice' }, () => resolve());
+    });
+    await lobbyPromise;
+
+    // round:start with no bets → NOT_READY error.
+    const errPromise = listen<{ code: string }>(host, 'error');
+    host.emit('round:start');
+    const err = await errPromise;
+    expect(err.code).toBe('NOT_READY');
+
+    // round:ready → phase transitions to 'betting'.
+    const readyPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'betting');
+    host.emit('round:ready');
+    const betting = await readyPromise;
+    expect(betting.phase).toBe('betting');
+    expect(betting.lastResult).toBeNull();
+    expect(betting.activeSeat).toBeNull();
+
+    host.disconnect();
+  }, 10_000);
 });

@@ -3,6 +3,7 @@ import { DealerArea } from './DealerArea';
 import { PlayerSeatView } from './PlayerSeat';
 import { ActionPanel } from './ActionPanel';
 import { BetPanel } from './BetPanel';
+import { DealButton } from './DealButton';
 import { ResultOverlay } from './ResultOverlay';
 import type { RootState } from '../store';
 
@@ -24,6 +25,7 @@ export function TableView() {
         ))}
       </div>
       <BetPanel />
+      <DealButton />
       <ActionPanel />
       <ResultOverlay />
     </div>

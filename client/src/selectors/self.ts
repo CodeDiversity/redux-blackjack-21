@@ -3,6 +3,12 @@ import type { RootState } from '../store';
 
 export const selectSelfSeatId = (s: RootState) => s.connection.selfSeatId;
 export const selectGameState = (s: RootState) => s.game.state;
+export const selectHostId = (s: RootState) => s.lobby.hostId;
+
+export const selectAmIHost = createSelector(
+  [selectSelfSeatId, selectHostId],
+  (selfId, hostId) => !!selfId && hostId === selfId,
+);
 
 export const selectMySeat = createSelector(
   [selectGameState, selectSelfSeatId],

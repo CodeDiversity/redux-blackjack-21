@@ -21,14 +21,18 @@ test('two players can play a full round', async () => {
   await guestPage.click('button:has-text("Join")');
   await guestPage.waitForURL(/\/room\//);
 
+  // Host transitions lobby → betting phase.
+  await hostPage.click('button:has-text("Begin Betting")');
+  await hostPage.waitForSelector('.bet-panel');
+
   // Both place a bet.
   await hostPage.fill('.bet-panel input', '50');
   await hostPage.click('button:has-text("Place Bet")');
   await guestPage.fill('.bet-panel input', '50');
   await guestPage.click('button:has-text("Place Bet")');
 
-  // Host starts the round.
-  await hostPage.click('button:has-text("Start Round")');
+  // Host deals the round.
+  await hostPage.click('button:has-text("Deal")');
 
   // Wait for the action panel to appear (someone's turn).
   await hostPage.waitForSelector('.action-panel', { timeout: 10_000 });

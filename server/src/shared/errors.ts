@@ -10,6 +10,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   CANNOT_SPLIT: 'This hand cannot be split.',
   HAND_LOCKED: 'This hand is no longer playable.',
   NAME_REQUIRED: 'Please enter a name.',
+  NOT_READY: 'All seated players must place a bet first.',
 };
 
 export function makeError(code: ErrorCode): { code: ErrorCode; message: string } {

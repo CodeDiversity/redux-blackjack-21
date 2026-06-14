@@ -13,11 +13,10 @@ export function Home() {
 
   const create = () => {
     if (!name.trim()) { setError('Please enter a name'); return; }
-    getSocket().emit('room:create', { name: name.trim() }, (resp: any) => {
-      if (resp?.seatId) {
+    getSocket().emit('room:create', { name: name.trim() }, (resp: { seatId: string; roomId: string } | { ok: false; code: string }) => {
+      if ('seatId' in resp) {
         dispatch(selfSeatAssigned(resp.seatId));
-        // roomId is in the lobby:state event; read it from there via a one-shot listener:
-        getSocket().once('lobby:state', (lobby: { roomId: string }) => navigate(`/room/${lobby.roomId}`));
+        navigate(`/room/${resp.roomId}`);
       } else setError(resp?.code ?? 'Failed to create room');
     });
   };

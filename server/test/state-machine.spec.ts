@@ -120,3 +120,58 @@ describe('applyAction: hand:split', () => {
     expect(() => applyAction(state, { type: 'hand:split', seatId: state.players[0].id, handIndex: 0 }, draw)).toThrow('CANNOT_SPLIT');
   });
 });
+
+describe('applyAction: round:ready', () => {
+  it('transitions lobby → betting, clears lastResult, clears activeSeat', () => {
+    const state: GameState = { ...createInitialState('ROOM1', 2, 0), phase: 'lobby', lastResult: { payouts: [] } };
+    const next = applyAction(state, { type: 'round:ready', seatId: state.players[0].id });
+    expect(next.phase).toBe('betting');
+    expect(next.activeSeat).toBeNull();
+    expect(next.lastResult).toBeNull();
+  });
+
+  it('transitions settled → betting so the next round can begin', () => {
+    const state: GameState = {
+      ...createInitialState('ROOM1', 2, 1),
+      phase: 'settled',
+      lastResult: { payouts: [{ seatId: 'x', delta: 50, reason: 'win' }] },
+    };
+    const next = applyAction(state, { type: 'round:ready', seatId: state.players[0].id });
+    expect(next.phase).toBe('betting');
+    expect(next.lastResult).toBeNull();
+  });
+
+  it('rejects ready outside lobby/settled (e.g. while a round is in flight)', () => {
+    const state: GameState = { ...createInitialState('ROOM1', 2, 1), phase: 'player_turn' };
+    expect(() => applyAction(state, { type: 'round:ready', seatId: state.players[0].id })).toThrow('INVALID_PHASE');
+  });
+});
+
+describe('applyAction: round:start', () => {
+  const deck: Card[] = [
+    { suit: '♠', rank: '5' }, { suit: '♥', rank: '6' },
+    { suit: '♦', rank: '7' }, { suit: '♣', rank: '8' },
+  ];
+  let i = 0;
+  const draw = () => deck[i++];
+
+  it('rejects NOT_READY when a seated player has bet === 0', () => {
+    const state: GameState = { ...createInitialState('ROOM1', 2, 0), phase: 'betting' };
+    // Seat 0 is empty; only an actually seated seat without a bet would trigger this.
+    state.players[0] = { ...state.players[0], name: 'Alice', status: 'betting', hands: [{ ...state.players[0].hands[0], bet: 50 }] };
+    state.players[1] = { ...state.players[1], name: 'Bob', status: 'betting', hands: [{ ...state.players[1].hands[0], bet: 0 }] };
+    expect(() => applyAction(state, { type: 'round:start', seatId: state.players[0].id }, draw)).toThrow('NOT_READY');
+  });
+
+  it('deals to all seated players when every seat has a bet', () => {
+    const state: GameState = { ...createInitialState('ROOM1', 2, 0), phase: 'betting' };
+    state.players[0] = { ...state.players[0], name: 'Alice', status: 'betting', hands: [{ ...state.players[0].hands[0], bet: 50 }] };
+    state.players[1] = { ...state.players[1], name: 'Bob', status: 'betting', hands: [{ ...state.players[1].hands[0], bet: 50 }] };
+    i = 0; // reset deck cursor
+    const next = applyAction(state, { type: 'round:start', seatId: state.players[0].id }, draw);
+    expect(next.phase).toBe('player_turn');
+    expect(next.activeSeat).toBe(0);
+    expect(next.players[0].hands[0].cards.length).toBe(2);
+    expect(next.players[1].hands[0].cards.length).toBe(2);
+  });
+});

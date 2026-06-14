@@ -92,4 +92,5 @@ export type ErrorCode =
   | 'ROOM_NOT_FOUND'
   | 'CANNOT_SPLIT'
   | 'HAND_LOCKED'
-  | 'NAME_REQUIRED';
+  | 'NAME_REQUIRED'
+  | 'NOT_READY';

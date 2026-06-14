@@ -10,6 +10,7 @@ export type Action =
   | { type: 'hand:stand'; seatId: string; handIndex: number }
   | { type: 'hand:double'; seatId: string; handIndex: number }
   | { type: 'hand:split'; seatId: string; handIndex: number }
+  | { type: 'round:ready'; seatId: string }
   | { type: 'round:start'; seatId: string };
 
 export function createInitialState(roomId: string, seatCount: number, _roundNumber = 0): GameState {
@@ -56,6 +57,7 @@ export function applyAction(state: GameState, action: Action, draw?: () => Card)
     case 'hand:stand': return applyStand(state, action, draw);
     case 'hand:double': return applyDouble(state, action, drawCardOrThrow(draw));
     case 'hand:split': return applySplit(state, action, drawCardOrThrow(draw));
+    case 'round:ready': return applyReady(state, action);
     case 'round:start': return applyStartRound(state, drawCardOrThrow(draw));
   }
 }
@@ -141,8 +143,20 @@ function applySplit(state: GameState, a: { seatId: string; handIndex: number }, 
   return { ...state, players: state.players.map((p, i) => i === index ? newSeat : p), shoeSize: state.shoeSize - 2 };
 }
 
+function applyReady(state: GameState, _a: { seatId: string }): GameState {
+  if (state.phase !== 'lobby' && state.phase !== 'settled') throw new GameError('INVALID_PHASE');
+  return {
+    ...state,
+    phase: 'betting',
+    activeSeat: null,
+    lastResult: null,
+  };
+}
+
 function applyStartRound(state: GameState, draw: () => Card): GameState {
   if (state.phase !== 'lobby' && state.phase !== 'betting' && state.phase !== 'settled') throw new GameError('INVALID_PHASE');
+  const hasUnbetSeated = state.players.some((p) => p.status !== 'empty' && p.hands[0].bet === 0);
+  if (hasUnbetSeated) throw new GameError('NOT_READY');
   let shoeSize = state.shoeSize;
   // For each seated player with a bet, deal 2 cards
   const dealtPlayers = state.players.map((p) => {

@@ -49,7 +49,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.emit(client, { type: 'lobby:state', payload: this.rooms.getLobbyState(roomId)! });
     this.emit(client, { type: 'game:state', payload: this.publicState(state) });
     client.join(roomId);
-    return { seatId };
+    return { seatId, roomId };
   }
 
   @SubscribeMessage('room:join')
@@ -62,6 +62,19 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.join(body.roomId);
       this.broadcastAll(body.roomId, state);
       return { seatId };
+    } catch (e) {
+      if (e instanceof GameError) return this.sendError(client, e.code as any);
+      throw e;
+    }
+  }
+
+  @SubscribeMessage('round:ready')
+  onReady(@ConnectedSocket() client: Socket) {
+    const ctx = this.rooms.roomForSocket(client.id);
+    if (!ctx) return this.sendError(client, 'NOT_YOUR_TURN');
+    try {
+      const state = this.rooms.apply(ctx.roomId, { type: 'round:ready', seatId: ctx.seatId });
+      this.broadcastAll(ctx.roomId, state);
     } catch (e) {
       if (e instanceof GameError) return this.sendError(client, e.code as any);
       throw e;
