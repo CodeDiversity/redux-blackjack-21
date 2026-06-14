@@ -20,7 +20,8 @@
     "react-redux": "^9.0.4",
     "react-router-dom": "^6.21.3",
     "reselect": "^5.0.1",
-    "socket.io-client": "^4.7.4"
+    "socket.io-client": "^4.7.4",
+    "styled-components": "^6.4.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.1",
