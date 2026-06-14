@@ -211,8 +211,14 @@ export const machine = setup({
   initial: 'lobby',
   context: initialContext(),
   states: {
-    lobby: { on: {} },
-    betting: { on: {} },
+    lobby: {
+      on: { 'round:ready': { target: 'betting' } },
+    },
+    betting: {
+      on: {
+        'round:start': { target: 'player_turn' },
+      },
+    },
     player_turn: { on: {} },
     dealer_turn: { on: {} },
     settled: { on: {} },
@@ -265,9 +271,11 @@ function eventWasApplied(next: MachineSnapshot, prev: MachineSnapshot): boolean 
 // --- applyAction wrapper ----------------------------------------------------
 
 export function applyAction(state: GameState, action: Action, draw?: () => Card): GameState {
+  // prepareEvent needs a draw for any action; supply a throw-away no-op if caller didn't.
+  const safeDraw: () => Card = draw ?? (() => { throw new GameError('DRAW_REQUIRED'); });
   const actor = createActor(machine, { snapshot: machine.resolveState({ value: state.phase, context: { ...state, __actionCount: 0 } }) });
   const prevSnapshot = actor.getSnapshot();
-  const event = prepareEvent(state, action, draw) as GameEvent;
+  const event = prepareEvent(state, action, safeDraw) as GameEvent;
   actor.send(event);
   const next = actor.getSnapshot();
 
