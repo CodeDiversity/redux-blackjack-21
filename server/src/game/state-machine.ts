@@ -181,6 +181,22 @@ function inferRejectionReason(state: GameState, action: Action): string {
 
 // --- XState machine (states and events; guards and actions added in later tasks)
 
+// Find the next acting seat (after `from`) that still has an actionable hand.
+// If no such seat exists, return `from` unchanged — the allHandsActed
+// auto-transition will then move the machine to dealer_turn.
+function findNextActingSeat(players: PlayerSeat[], from: number): number {
+  for (let i = from + 1; i < players.length; i++) {
+    const s = players[i];
+    if (
+      s.status === 'acting' &&
+      s.hands.some((h) => !h.stood && !h.busted && !h.doubled && h.cards.length > 0)
+    ) {
+      return i;
+    }
+  }
+  return from;
+}
+
 function makeGuardFn(g: GuardDef) {
   return ({ context, event }: { context: GameContext; event: GameEvent }) => {
     // Adapt XState (context, event) → our (state, action) signature.
@@ -267,25 +283,34 @@ export const machine = setup({
       const player = context.players[context.activeSeat!];
       const hand = player.hands[event.handIndex];
       const newCards = [...hand.cards, event.card];
+      const busted = isBusted(newCards);
+      const newPlayers = context.players.map((p, i) =>
+        i === context.activeSeat
+          ? { ...p, hands: p.hands.map((h, j) => j === event.handIndex ? { ...h, cards: newCards, busted } : h) }
+          : p,
+      );
+      // Advance the seat only on bust — otherwise the player keeps acting.
+      const activeSeat = busted ? findNextActingSeat(newPlayers, context.activeSeat!) : context.activeSeat;
       return {
         __actionCount: context.__actionCount + 1,
         shoeSize: context.shoeSize - 1,
-        players: context.players.map((p, i) =>
-          i === context.activeSeat
-            ? { ...p, hands: p.hands.map((h, j) => j === event.handIndex ? { ...h, cards: newCards, busted: isBusted(newCards) } : h) }
-            : p,
-        ),
+        players: newPlayers,
+        activeSeat,
       };
     }),
     assignStand: assign(({ context, event }) => {
       if (event.type !== 'hand:stand') return {};
+      const newPlayers = context.players.map((p, i) =>
+        i === context.activeSeat
+          ? { ...p, hands: p.hands.map((h, j) => j === event.handIndex ? { ...h, stood: true } : h) }
+          : p,
+      );
+      // Stand always completes the hand — try to advance the turn.
+      const activeSeat = findNextActingSeat(newPlayers, context.activeSeat!);
       return {
         __actionCount: context.__actionCount + 1,
-        players: context.players.map((p, i) =>
-          i === context.activeSeat
-            ? { ...p, hands: p.hands.map((h, j) => j === event.handIndex ? { ...h, stood: true } : h) }
-            : p,
-        ),
+        players: newPlayers,
+        activeSeat,
       };
     }),
     assignDouble: assign(({ context, event }) => {
@@ -293,18 +318,22 @@ export const machine = setup({
       const player = context.players[context.activeSeat!];
       const hand = player.hands[event.handIndex];
       const newCards = [...hand.cards, event.card];
+      const newPlayers = context.players.map((p, i) =>
+        i === context.activeSeat
+          ? {
+              ...p,
+              bankroll: p.bankroll - hand.bet,
+              hands: p.hands.map((h, j) => j === event.handIndex ? { ...h, cards: newCards, bet: h.bet * 2, doubled: true, busted: isBusted(newCards) } : h),
+            }
+          : p,
+      );
+      // Double always locks the hand — try to advance the turn.
+      const activeSeat = findNextActingSeat(newPlayers, context.activeSeat!);
       return {
         __actionCount: context.__actionCount + 1,
         shoeSize: context.shoeSize - 1,
-        players: context.players.map((p, i) =>
-          i === context.activeSeat
-            ? {
-                ...p,
-                bankroll: p.bankroll - hand.bet,
-                hands: p.hands.map((h, j) => j === event.handIndex ? { ...h, cards: newCards, bet: h.bet * 2, doubled: true, busted: isBusted(newCards) } : h),
-              }
-            : p,
-        ),
+        players: newPlayers,
+        activeSeat,
       };
     }),
     assignSplit: assign(({ context, event }) => {
@@ -318,6 +347,7 @@ export const machine = setup({
       return {
         __actionCount: context.__actionCount + 1,
         shoeSize: context.shoeSize - 2,
+        // After a split the player still has hands to act on — keep activeSeat as-is.
         players: context.players.map((p, i) =>
           i === context.activeSeat
             ? { ...p, bankroll: p.bankroll - hand.bet, hands: [leftHand, rightHand] }
