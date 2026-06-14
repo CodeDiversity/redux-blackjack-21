@@ -94,8 +94,14 @@ type Rank = 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | '
 
 type Card = { suit: Suit; rank: Rank };
 
+type Card = { suit: Suit; rank: Rank };
+
+// On the wire, the dealer's hole card is replaced with a placeholder until
+// the dealer-turn phase. Player hands always carry real Card values.
+type CardSlot = Card | { hidden: true };
+
 type Hand = {
-  cards: Card[];
+  cards: CardSlot[];
   bet: number;        // 0 when no bet placed
   stood: boolean;
   busted: boolean;
@@ -145,7 +151,7 @@ type RoundResult = {
 };
 ```
 
-**Cards on the wire:** the server sends `Card[]` per hand (not the whole shoe). The dealer's hole card is sent as `{ hidden: true }` until the dealer-turn phase, at which point the real card is revealed.
+**Cards on the wire:** the server sends `CardSlot[]` per hand (not the whole shoe). The dealer's hole card is sent as `{ hidden: true }` in `dealer.cards[1]` until the dealer-turn phase, at which point the slot becomes a real `Card`. Player hands always carry real `Card` values in every phase.
 
 ### Client (Redux Toolkit slices)
 
