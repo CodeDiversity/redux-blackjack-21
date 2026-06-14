@@ -86,4 +86,11 @@ describe('drawBridge.prepareEvent', () => {
       dealerUpcard: { suit: '♣', rank: 'K' },
     });
   });
+
+  it('throws GameError with code DRAW_REQUIRED when draw is undefined and action needs cards', () => {
+    const state: GameState = { ...baseState(), phase: 'player_turn', activeSeat: 0 };
+    expect(() =>
+      prepareEvent(state, { type: 'hand:hit', seatId: state.players[0].id, handIndex: 0 }, undefined),
+    ).toThrow('DRAW_REQUIRED');
+  });
 });

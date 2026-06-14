@@ -1,11 +1,12 @@
 import type { Card, CardSlot, GameState } from '../shared/types';
 import type { Action } from './state-machine';
+import { GameError } from './state-machine';
 import { dealerShouldHit } from './dealer';
 
 export type PreparedEvent = { type: string; [k: string]: unknown };
 
 export function prepareEvent(state: GameState, action: Action, draw?: () => Card): PreparedEvent {
-  if (!draw) throw new Error('DRAW_REQUIRED');
+  if (!draw) throw new GameError('DRAW_REQUIRED');
 
   switch (action.type) {
     case 'bet:place':
