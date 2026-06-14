@@ -43,6 +43,7 @@ export type GameContext = {
   activeSeat: number | null;
   roundNumber: number;
   lastResult: RoundResult | null;
+  __actionCount: number;
 };
 
 const initialContext = (): GameContext => ({
@@ -53,6 +54,7 @@ const initialContext = (): GameContext => ({
   activeSeat: null,
   roundNumber: 0,
   lastResult: null,
+  __actionCount: 0,
 });
 
 // --- XState machine (states and events; guards and actions added in later tasks)
@@ -74,6 +76,8 @@ export const machine = setup({
     settled: { on: {} },
   },
 });
+
+type Snapshot = ReturnType<typeof machine.transition>;
 
 // --- Public API: createInitialState (unchanged) ----------------------------
 
@@ -97,6 +101,36 @@ export function createInitialState(roomId: string, seatCount: number, _roundNumb
     activeSeat: null,
     roundNumber: 0,
     lastResult: null,
+  };
+}
+
+function toSnapshot(state: GameState): Snapshot {
+  return machine.resolveState({
+    value: state.phase,
+    context: {
+      shoeSize: state.shoeSize,
+      cutCardIndex: state.cutCardIndex,
+      players: state.players,
+      dealer: state.dealer,
+      activeSeat: state.activeSeat,
+      roundNumber: state.roundNumber,
+      lastResult: state.lastResult,
+      __actionCount: 0,
+    },
+  });
+}
+
+function fromSnapshot(snap: Snapshot, roomId: string): GameState {
+  return {
+    roomId,
+    phase: snap.value as GameState['phase'],
+    shoeSize: snap.context.shoeSize,
+    cutCardIndex: snap.context.cutCardIndex,
+    players: snap.context.players,
+    dealer: snap.context.dealer,
+    activeSeat: snap.context.activeSeat,
+    roundNumber: snap.context.roundNumber,
+    lastResult: snap.context.lastResult,
   };
 }
 
