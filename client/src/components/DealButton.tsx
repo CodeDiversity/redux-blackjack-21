@@ -1,6 +1,31 @@
 import { useSelector } from 'react-redux';
+import styled, { css } from 'styled-components';
 import { getSocket } from '../socket/client';
 import { selectGameState, selectAmIHost } from '../selectors/self';
+
+const Button = styled.button<{ $enabled: boolean }>`
+  background: ${({ theme }) => theme.colors.textPrimary};
+  color: ${({ theme }) => theme.colors.feltDark};
+  border: 2px solid ${({ theme }) => theme.colors.textSecondary};
+  border-radius: ${({ theme }) => theme.radii.md};
+  padding: ${({ theme }) => `${theme.spacing.md} ${theme.spacing.xl}`};
+  font-size: ${({ theme }) => theme.typography.largeSize};
+  font-weight: bold;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: ${({ theme }) => theme.shadows.cardLarge};
+  transition: opacity 120ms ease;
+  ${({ $enabled }) =>
+    !$enabled &&
+    css`
+      background: ${({ theme }) => theme.colors.surfaceDimmer};
+      color: ${({ theme }) => theme.colors.textDim};
+      border-color: ${({ theme }) => theme.colors.surfaceBorder};
+      box-shadow: none;
+      cursor: not-allowed;
+    `}
+`;
 
 /**
  * Host-only button shown during the betting phase. Enabled only when every
@@ -21,8 +46,12 @@ export function DealButton() {
   const canDeal = seatedCount >= 2 && allSeatedHaveBet;
 
   return (
-    <button disabled={!canDeal} onClick={() => getSocket().emit('round:start')}>
+    <Button
+      $enabled={canDeal}
+      disabled={!canDeal}
+      onClick={() => getSocket().emit('round:start')}
+    >
       Deal
-    </button>
+    </Button>
   );
 }
