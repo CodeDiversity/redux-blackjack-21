@@ -707,7 +707,7 @@ const initialContext = (): GameContext => ({
   lastResult: null,
 });
 
-// --- XState machine (states, events, guards, actions TBD) ------------------
+// --- XState machine (states and events; guards and actions added in later tasks)
 
 export const machine = setup({
   types: {
@@ -753,7 +753,7 @@ export function createInitialState(roomId: string, seatCount: number, _roundNumb
   };
 }
 
-// --- applyAction stub (TBD) ------------------------------------------------
+// --- applyAction stub (replaced in Task 3.5 with the full wrapper) ----------
 
 export function applyAction(_state: GameState, _action: Action, _draw?: () => Card): GameState {
   throw new Error('not implemented');
@@ -787,17 +787,45 @@ git add server/src/game/state-machine.ts
 git commit -m "feat(server): scaffold XState machine with empty states and stub applyAction"
 ```
 
-### Task 3.4: Add `applyAction` wrapper with `toSnapshot` and `fromSnapshot`
+### Task 3.4: Add `toSnapshot` and `fromSnapshot` helpers
 
-- [ ] **Step 1: Add the snapshot helpers and wrapper**
+- [ ] **Step 1: Add the snapshot helpers and `__actionCount` to context**
 
-In `server/src/game/state-machine.ts`, replace the `applyAction` stub:
+In `server/src/game/state-machine.ts`, replace the `applyAction` stub with the snapshot helpers. Also extend the `GameContext` type to include `__actionCount` (an internal counter used by Task 3.5 for rejection detection; stripped from the wire format in `fromSnapshot`):
+
+First, add `__actionCount: number` to the `GameContext` type (in the existing type block):
 
 ```ts
-import { prepareEvent, computeDealerEvent, type PreparedEvent } from './draw-bridge';
+export type GameContext = {
+  shoeSize: number;
+  cutCardIndex: number;
+  players: PlayerSeat[];
+  dealer: Hand;
+  activeSeat: number | null;
+  roundNumber: number;
+  lastResult: RoundResult | null;
+  __actionCount: number;
+};
+```
 
-// --- Snapshot translation ---------------------------------------------------
+And update `initialContext` to set it:
 
+```ts
+const initialContext = (): GameContext => ({
+  shoeSize: 0,
+  cutCardIndex: 0,
+  players: [],
+  dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
+  activeSeat: null,
+  roundNumber: 0,
+  lastResult: null,
+  __actionCount: 0,
+});
+```
+
+Then add the snapshot helpers (replacing the `applyAction` stub):
+
+```ts
 type Snapshot = ReturnType<typeof machine.transition>;
 
 function toSnapshot(state: GameState): Snapshot {
@@ -811,6 +839,7 @@ function toSnapshot(state: GameState): Snapshot {
       activeSeat: state.activeSeat,
       roundNumber: state.roundNumber,
       lastResult: state.lastResult,
+      __actionCount: 0,
     },
   });
 }
@@ -829,32 +858,250 @@ function fromSnapshot(snap: Snapshot, roomId: string): GameState {
   };
 }
 
-// --- applyAction wrapper ----------------------------------------------------
-
-export function applyAction(state: GameState, action: Action, draw?: () => Card): GameState {
-  const snapshot = toSnapshot(state);
-  const event = prepareEvent(snapshot, action, draw) as GameEvent;
-  const next = machine.transition(snapshot, event);
-  return fromSnapshot(next, state.roomId);
+export function applyAction(_state: GameState, _action: Action, _draw?: () => Card): GameState {
+  throw new Error('not implemented');
 }
 ```
 
-- [ ] **Step 2: Run the existing tests to confirm they all fail with the same reason**
+- [ ] **Step 2: Run the existing tests to confirm they still fail (the old `applyAction` is still a stub)**
 
 ```bash
 npx jest test/state-machine.spec.ts
 ```
 
-Expected: 24 tests still fail (likely with "No event handler" or similar XState error, since the machine has no transitions yet).
+Expected: 24 tests still fail (with "not implemented").
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add server/src/game/state-machine.ts
-git commit -m "feat(server): applyAction wrapper with toSnapshot/fromSnapshot"
+git commit -m "feat(server): toSnapshot/fromSnapshot helpers and __actionCount in context"
 ```
 
-### Task 3.5: Add the `lobby → betting` and `betting → player_turn` transitions
+### Task 3.5: Add validation guards and the `applyAction` wrapper with error detection
+
+This task adds the 16 validation guards from the spec, the `inferRejectionReason` helper, the `eventWasApplied` detection, and updates `applyAction` to throw `GameError` on rejection. Subsequent tasks (3.6-3.12) will reference these guards.
+
+- [ ] **Step 1: Add the guard definitions, the `actionGuards` map, and the helper functions**
+
+In `server/src/game/state-machine.ts`, add the following block before the `applyAction` stub:
+
+```ts
+import { prepareEvent, computeDealerEvent } from './draw-bridge';
+
+// --- Validation guards ------------------------------------------------------
+
+type GuardPredicate = (state: GameState, event: Action) => boolean;
+type GuardDef = { name: string; predicate: GuardPredicate; errorCode: string };
+
+const guards: GuardDef[] = [
+  // Phase guards
+  { name: 'isLobbyOrBetting', errorCode: 'INVALID_PHASE',
+    predicate: (s) => s.phase === 'lobby' || s.phase === 'betting' },
+  { name: 'isPlayerTurnPhase', errorCode: 'INVALID_PHASE',
+    predicate: (s) => s.phase === 'player_turn' },
+  { name: 'isLobbyOrSettled', errorCode: 'INVALID_PHASE',
+    predicate: (s) => s.phase === 'lobby' || s.phase === 'settled' },
+  { name: 'isSettled', errorCode: 'INVALID_PHASE',
+    predicate: (s) => s.phase === 'settled' },
+
+  // Bet guards
+  { name: 'isValidBetAmount', errorCode: 'BET_OUT_OF_RANGE',
+    predicate: (s, e) => e.type === 'bet:place' && e.amount >= Config.MIN_BET && e.amount <= Config.MAX_BET },
+  { name: 'hasSufficientFundsForBet', errorCode: 'INSUFFICIENT_FUNDS',
+    predicate: (s, e) => {
+      if (e.type !== 'bet:place') return false;
+      const p = s.players.find((x) => x.id === e.seatId);
+      return p !== undefined && p.bankroll >= e.amount;
+    }},
+
+  // Turn guards
+  { name: 'isActiveSeat', errorCode: 'NOT_YOUR_TURN',
+    predicate: (s, e) => {
+      if (e.type === 'bet:place' || e.type === 'round:ready' || e.type === 'round:start' || e.type === 'round:advance') return true;
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      return idx !== -1 && idx === s.activeSeat;
+    }},
+
+  // Hand guards
+  { name: 'isHandActionable', errorCode: 'HAND_LOCKED',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:hit' && e.type !== 'hand:stand') return false;
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      if (idx === -1) return false;
+      const hand = s.players[idx].hands[e.handIndex];
+      return !!hand && hand.cards.length > 0 && !hand.stood && !hand.busted && !hand.doubled;
+    }},
+  { name: 'isDoubleableHand', errorCode: 'HAND_LOCKED',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:double') return false;
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      if (idx === -1) return false;
+      const hand = s.players[idx].hands[e.handIndex];
+      return !!hand && hand.cards.length <= 2 && !hand.stood && !hand.busted && !hand.doubled;
+    }},
+  { name: 'canSplitHand', errorCode: 'CANNOT_SPLIT',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:split') return false;
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      if (idx === -1) return false;
+      const p = s.players[idx];
+      const hand = p.hands[e.handIndex];
+      if (!hand || hand.cards.length !== 2) return false;
+      if (p.hands.length >= 2) return false;
+      const real = hand.cards.filter((c): c is Card => !('hidden' in c));
+      return real[0]?.rank === real[1]?.rank;
+    }},
+  { name: 'hasSufficientFundsForDouble', errorCode: 'INSUFFICIENT_FUNDS',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:double') return false;
+      const p = s.players.find((x) => x.id === e.seatId);
+      return p !== undefined && p.bankroll >= p.hands[e.handIndex].bet;
+    }},
+  { name: 'hasSufficientFundsForSplit', errorCode: 'INSUFFICIENT_FUNDS',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:split') return false;
+      const p = s.players.find((x) => x.id === e.seatId);
+      return p !== undefined && p.bankroll >= p.hands[e.handIndex].bet;
+    }},
+  { name: 'noAcesRuleForSplit', errorCode: 'CANNOT_SPLIT',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:split') return true;  // vacuous when not splitting aces
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      if (idx === -1) return false;
+      const hand = s.players[idx].hands[e.handIndex];
+      const real = hand?.cards.filter((c): c is Card => !('hidden' in c)) ?? [];
+      if (real[0]?.rank !== 'A') return true;
+      return Config.RESPLIT_ACES;
+    }},
+
+  // Round guards
+  { name: 'allPlayersReady', errorCode: 'NOT_READY',
+    predicate: (s) => !s.players.some((p) => p.status !== 'empty' && p.hands[0]?.bet === 0) },
+  { name: 'allHandsActed', errorCode: 'INVALID_PHASE',
+    predicate: (s) => {
+      if (s.activeSeat === null) return true;
+      const seat = s.players[s.activeSeat];
+      if (!seat) return true;
+      return seat.hands.every((h) => h.stood || h.busted || h.doubled || h.cards.length === 0);
+    }},
+];
+
+// Order of guards to check per action — used by inferRejectionReason.
+const actionGuards: Partial<Record<Action['type'], string[]>> = {
+  'bet:place': ['isLobbyOrBetting', 'isValidBetAmount', 'hasSufficientFundsForBet'],
+  'hand:hit': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActionable'],
+  'hand:stand': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActionable'],
+  'hand:double': ['isPlayerTurnPhase', 'isActiveSeat', 'isDoubleableHand', 'hasSufficientFundsForDouble'],
+  'hand:split': ['isPlayerTurnPhase', 'isActiveSeat', 'canSplitHand', 'hasSufficientFundsForSplit', 'noAcesRuleForSplit'],
+  'round:ready': ['isLobbyOrSettled'],
+  'round:start': ['allPlayersReady'],
+  'round:advance': ['isSettled'],
+};
+
+function inferRejectionReason(state: GameState, action: Action): string {
+  const guardList = actionGuards[action.type] ?? [];
+  for (const guardName of guardList) {
+    const guard = guards.find((g) => g.name === guardName);
+    if (guard && !guard.predicate(state, action)) {
+      return guard.errorCode;
+    }
+  }
+  return 'INVALID_PHASE';
+}
+
+function eventWasApplied(next: Snapshot, prev: Snapshot): boolean {
+  // An action ran if either the state value changed or an assign fired (counter incremented).
+  return next.value !== prev.value || next.context.__actionCount !== prev.context.__actionCount;
+}
+```
+
+- [ ] **Step 2: Wire the guards into the XState machine via `setup({...})`**
+
+Update the `setup` call to register the guards as XState predicates (so XState enforces them). Add a `guards` block to the `setup` config that maps each guard name to its predicate:
+
+```ts
+export const machine = setup({
+  types: {
+    context: {} as GameContext,
+    events: {} as GameEvent,
+    input: {} as void,
+  },
+  guards: Object.fromEntries(
+    guards.map((g) => [g.name, ({ context, event }: { context: GameContext; event: GameEvent }) => {
+      // Adapt XState (context, event) → our (state, action) signature.
+      const fakeState: GameState = {
+        roomId: '',
+        phase: 'lobby',  // unused by predicates; the actionGuards map drives the check order
+        shoeSize: context.shoeSize,
+        cutCardIndex: context.cutCardIndex,
+        players: context.players,
+        dealer: context.dealer,
+        activeSeat: context.activeSeat,
+        roundNumber: context.roundNumber,
+        lastResult: context.lastResult,
+      };
+      // Coerce the enriched event to the user-action shape.
+      const action = event as unknown as Action;
+      return g.predicate(fakeState, action);
+    }]),
+  ),
+  actions: {},
+}).createMachine({
+  id: 'blackjack',
+  initial: 'lobby',
+  context: initialContext(),
+  states: {
+    lobby: { on: {} },
+    betting: { on: {} },
+    player_turn: { on: {} },
+    dealer_turn: { on: {} },
+    settled: { on: {} },
+  },
+});
+```
+
+- [ ] **Step 3: Replace the `applyAction` stub with the full wrapper**
+
+Replace the `applyAction` stub:
+
+```ts
+export function applyAction(state: GameState, action: Action, draw?: () => Card): GameState {
+  const snapshot = toSnapshot(state);
+  const event = prepareEvent(snapshot, action, draw) as GameEvent;
+  const next = machine.transition(snapshot, event);
+
+  if (!eventWasApplied(next, snapshot)) {
+    throw new GameError(inferRejectionReason(state, action));
+  }
+
+  // If the auto-transition to dealer_turn fired, compute and apply the dealer event.
+  if (next.value === 'dealer_turn' && draw) {
+    const dealerEv = computeDealerEvent(next, draw) as GameEvent;
+    const finalSnap = machine.transition(next, dealerEv);
+    return fromSnapshot(finalSnap, state.roomId);
+  }
+
+  return fromSnapshot(next, state.roomId);
+}
+```
+
+- [ ] **Step 4: Run the existing tests to confirm they fail with the new error codes**
+
+```bash
+npx jest test/state-machine.spec.ts
+```
+
+Expected: 24 tests still fail (the machine has no transitions yet, so every event is rejected with `INVALID_PHASE`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add server/src/game/state-machine.ts
+git commit -m "feat(server): 16 validation guards, inferRejectionReason, and applyAction error detection"
+```
+
+### Task 3.6: Add the `lobby → betting` and `betting → player_turn` transitions
 
 - [ ] **Step 1: Add the `round:ready` and `round:start` events to the lobby and betting states**
 
@@ -891,7 +1138,7 @@ git add server/src/game/state-machine.ts
 git commit -m "feat(server): lobby→betting and betting→player_turn transitions"
 ```
 
-### Task 3.6: Add `assignDeal` action (so `round:start` works)
+### Task 3.7: Add `assignDeal` action (so `round:start` works)
 
 - [ ] **Step 1: Add the action**
 
@@ -963,7 +1210,7 @@ git add server/src/game/state-machine.ts
 git commit -m "feat(server): assignDeal action for round:start"
 ```
 
-### Task 3.7: Add the `player_turn` events and assign actions for `hand:hit` / `hand:stand`
+### Task 3.8: Add the `player_turn` events and assign actions for `hand:hit` / `hand:stand`
 
 - [ ] **Step 1: Add the actions and events**
 
@@ -1027,7 +1274,7 @@ git add server/src/game/state-machine.ts
 git commit -m "feat(server): assignHit and assignStand actions for player_turn"
 ```
 
-### Task 3.8: Add `assignDouble` and `assignSplit`
+### Task 3.9: Add `assignDouble` and `assignSplit`
 
 - [ ] **Step 1: Add the actions**
 
@@ -1099,7 +1346,7 @@ git add server/src/game/state-machine.ts
 git commit -m "feat(server): assignDouble and assignSplit actions"
 ```
 
-### Task 3.9: Add `assignAdvance` and the `settled → betting` transition
+### Task 3.10: Add `assignAdvance` and the `settled → betting` transition
 
 - [ ] **Step 1: Add the action and transition**
 
@@ -1147,7 +1394,7 @@ git add server/src/game/state-machine.ts
 git commit -m "feat(server): assignAdvance action for round:advance"
 ```
 
-### Task 3.10: Add the `player_turn → dealer_turn → settled` auto-transitions
+### Task 3.11: Add the `player_turn → dealer_turn → settled` auto-transitions
 
 - [ ] **Step 1: Add the auto-transition guard and dealer/settle actions**
 
@@ -1256,7 +1503,7 @@ git add server/src/game/state-machine.ts
 git commit -m "feat(server): dealer-turn and settled transitions with auto-event"
 ```
 
-### Task 3.11: Add `assignBet` and `bet:place` event
+### Task 3.12: Add `assignBet` and `bet:place` event
 
 - [ ] **Step 1: Add the action and event**
 
@@ -1308,6 +1555,84 @@ Expected: 12+ suites pass, typecheck clean.
 ```bash
 git add server/src/game/state-machine.ts
 git commit -m "feat(server): assignBet action and bet:place event"
+```
+
+### Task 3.13: Wire all guards into transitions and add `__actionCount` to all assigns
+
+This task finalizes the machine by attaching the guard definitions from Task 3.5 to every transition declaration, and ensuring every `assign` action increments the `__actionCount` counter so the `eventWasApplied` detection in `applyAction` works.
+
+- [ ] **Step 1: Add `guard: '...'` (or `guard: [...]`) to every transition declaration**
+
+For each transition added in Tasks 3.6-3.12, attach a `guard` field using the actionGuards map from Task 3.5. XState v5 accepts a single guard name or an array of names — all must pass for the transition to fire.
+
+| Transition | Guard(s) |
+|---|---|
+| `lobby.on['round:ready']` (3.6) | `guard: 'isLobbyOrSettled'` |
+| `betting.on['round:start']` (3.7) | `guard: 'allPlayersReady'` |
+| `player_turn.on['hand:hit']` (3.8) | `guard: ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActionable']` |
+| `player_turn.on['hand:stand']` (3.8) | `guard: ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActionable']` |
+| `player_turn.on['hand:double']` (3.9) | `guard: ['isPlayerTurnPhase', 'isActiveSeat', 'isDoubleableHand', 'hasSufficientFundsForDouble']` |
+| `player_turn.on['hand:split']` (3.9) | `guard: ['isPlayerTurnPhase', 'isActiveSeat', 'canSplitHand', 'hasSufficientFundsForSplit', 'noAcesRuleForSplit']` |
+| `settled.on['round:advance']` (3.10) | `guard: 'isSettled'` |
+| `dealer_turn.on['round:dealerPlay']` (3.11) | (no guard — the event carries the dealer's hand; rejection is handled by the absence of the event) |
+| `betting.on['bet:place']` (3.12) | `guard: ['isLobbyOrBetting', 'isValidBetAmount', 'hasSufficientFundsForBet']` |
+
+The auto-transition `player_turn.always[0]` (3.11) already has `guard: 'allHandsActed'` from Task 3.11. No change needed.
+
+- [ ] **Step 2: Add `__actionCount: context.__actionCount + 1` to every `assign` action**
+
+For each `assign(...)` action, include `__actionCount: context.__actionCount + 1` as a field in the returned object. This counter is what `eventWasApplied` uses to detect whether the event was accepted (some assign fired) or rejected by guards (no assign fired).
+
+Apply this to:
+- `assignDeal` (3.7)
+- `assignHit` (3.8)
+- `assignStand` (3.8)
+- `assignDouble` (3.9)
+- `assignSplit` (3.9)
+- `assignAdvance` (3.10)
+- `assignDealerHand` (3.11)
+- `assignSettle` (3.11)
+- `assignBet` (3.12)
+
+Example (apply the same pattern to each):
+
+```ts
+assignDeal: assign(({ context, event }) => {
+  if (event.type !== 'round:start') return {};
+  // ... existing logic ...
+  return {
+    __actionCount: context.__actionCount + 1,
+    players: dealtPlayers,
+    dealer: { ...context.dealer, cards: [event.dealerUpcard, { hidden: true }] },
+    activeSeat: actingIndex === -1 ? null : actingIndex,
+    roundNumber: context.roundNumber + 1,
+    lastResult: null,
+  };
+}),
+```
+
+- [ ] **Step 3: Run the existing tests to confirm they now pass**
+
+```bash
+npx jest test/state-machine.spec.ts
+```
+
+Expected: all 24 tests pass. The validation tests (e.g., "rejects bets below MIN_BET") now throw `GameError` with the right code because the guards reject the event and `applyAction` throws.
+
+- [ ] **Step 4: Run all server tests and typecheck**
+
+```bash
+npx jest
+npx tsc --noEmit
+```
+
+Expected: 12+ suites pass, typecheck clean. If any test fails, the most likely cause is a guard predicate that doesn't match the legacy `apply*` behavior — compare against `state-machine.legacy.ts`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add server/src/game/state-machine.ts
+git commit -m "feat(server): wire all guards and __actionCount across the machine"
 ```
 
 ---
@@ -1464,7 +1789,7 @@ describe('snapshot roundtrip', () => {
 npx jest test/state-machine-xstate.spec.ts
 ```
 
-Expected: 2 new tests pass; 6 total.
+Expected: 2 new tests pass; 6 total (snapshot roundtrip).
 
 - [ ] **Step 3: Commit**
 
@@ -1473,7 +1798,110 @@ git add server/test/state-machine-xstate.spec.ts
 git commit -m "test(server): snapshot roundtrip preserves GameState"
 ```
 
-### Task 5.3: Run the full server test suite
+### Task 5.3: Add guard structural tests
+
+This task adds ~10 focused tests on the validation guards defined in Task 3.5. Each test exercises a guard predicate with a context/action combination that should pass or fail, and verifies the error code mapping.
+
+- [ ] **Step 1: Add the test block**
+
+Append to `server/test/state-machine-xstate.spec.ts`:
+
+```ts
+import { applyAction, createInitialState } from '../src/game/state-machine';
+import { Config } from '../src/config';
+import type { GameState } from '../src/shared/types';
+
+const seatWithBankroll = (state: GameState, idx: number, bankroll: number): GameState => ({
+  ...state,
+  players: state.players.map((p, i) => i === idx ? { ...p, bankroll } : p),
+});
+
+describe('validation guards', () => {
+  it('isLobbyOrBetting accepts lobby and betting, rejects player_turn', () => {
+    const lobby = createInitialState('R', Config.SEAT_COUNT, 0);
+    const betting = { ...lobby, phase: 'betting' as const };
+    const turn = { ...lobby, phase: 'player_turn' as const };
+    expect(() => applyAction(lobby, { type: 'bet:place', seatId: lobby.players[0].id, amount: 50 })).not.toThrow();
+    expect(() => applyAction(betting, { type: 'bet:place', seatId: betting.players[0].id, amount: 50 })).not.toThrow();
+    expect(() => applyAction(turn, { type: 'bet:place', seatId: turn.players[0].id, amount: 50 })).toThrow('INVALID_PHASE');
+  });
+
+  it('isValidBetAmount throws BET_OUT_OF_RANGE for amount below MIN_BET', () => {
+    const state = createInitialState('R', Config.SEAT_COUNT, 0);
+    expect(() => applyAction(state, { type: 'bet:place', seatId: state.players[0].id, amount: 1 })).toThrow('BET_OUT_OF_RANGE');
+  });
+
+  it('isValidBetAmount throws BET_OUT_OF_RANGE for amount above MAX_BET', () => {
+    const state = createInitialState('R', Config.SEAT_COUNT, 0);
+    expect(() => applyAction(state, { type: 'bet:place', seatId: state.players[0].id, amount: Config.MAX_BET + 1 })).toThrow('BET_OUT_OF_RANGE');
+  });
+
+  it('hasSufficientFundsForBet throws INSUFFICIENT_FUNDS when bankroll < amount', () => {
+    const state = seatWithBankroll(createInitialState('R', Config.SEAT_COUNT, 0), 0, 50);
+    expect(() => applyAction(state, { type: 'bet:place', seatId: state.players[0].id, amount: 100 })).toThrow('INSUFFICIENT_FUNDS');
+  });
+
+  it('isActiveSeat throws NOT_YOUR_TURN when seat is not the active seat', () => {
+    let state: GameState = { ...createInitialState('R', Config.SEAT_COUNT, 0), phase: 'player_turn', activeSeat: 0 };
+    state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting' as const, hands: [{ ...p.hands[0], cards: [{ suit: '♠', rank: '5' }] }] } : p) };
+    expect(() => applyAction(state, { type: 'hand:hit', seatId: state.players[1].id, handIndex: 0 })).toThrow('NOT_YOUR_TURN');
+  });
+
+  it('isHandActionable throws HAND_LOCKED when hand is already stood', () => {
+    let state: GameState = { ...createInitialState('R', Config.SEAT_COUNT, 0), phase: 'player_turn', activeSeat: 0 };
+    state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting' as const, hands: [{ ...p.hands[0], cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }], stood: true }] } : p) };
+    expect(() => applyAction(state, { type: 'hand:hit', seatId: state.players[0].id, handIndex: 0 })).toThrow('HAND_LOCKED');
+  });
+
+  it('canSplitHand throws CANNOT_SPLIT when ranks differ', () => {
+    let state: GameState = { ...createInitialState('R', Config.SEAT_COUNT, 0), phase: 'player_turn', activeSeat: 0 };
+    state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting' as const, bankroll: 1000, hands: [{ ...p.hands[0], bet: 50, cards: [{ suit: '♠', rank: '8' }, { suit: '♥', rank: '9' }] }] } : p) };
+    expect(() => applyAction(state, { type: 'hand:split', seatId: state.players[0].id, handIndex: 0 })).toThrow('CANNOT_SPLIT');
+  });
+
+  it('canSplitHand throws CANNOT_SPLIT when hand already has 2 hands (resplit blocked)', () => {
+    let state: GameState = { ...createInitialState('R', Config.SEAT_COUNT, 0), phase: 'player_turn', activeSeat: 0 };
+    state = {
+      ...state,
+      players: state.players.map((p, i) => i === 0
+        ? { ...p, status: 'acting' as const, bankroll: 1000, hands: [
+            { cards: [{ suit: '♠', rank: '8' }, { suit: '♥', rank: '2' }], bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false },
+            { cards: [{ suit: '♦', rank: '8' }, { suit: '♣', rank: '3' }], bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false },
+          ] }
+        : p),
+    };
+    expect(() => applyAction(state, { type: 'hand:split', seatId: state.players[0].id, handIndex: 0 })).toThrow('CANNOT_SPLIT');
+  });
+
+  it('allPlayersReady throws NOT_READY when a seated player has no bet', () => {
+    let state: GameState = { ...createInitialState('R', Config.SEAT_COUNT, 0), phase: 'betting' };
+    state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, name: 'Alice', status: 'betting' as const, hands: [{ ...p.hands[0], bet: 50 }] } : { ...p, name: 'Bob', status: 'betting' as const, hands: [{ ...p.hands[0], bet: 0 }] }) };
+    expect(() => applyAction(state, { type: 'round:start', seatId: state.players[0].id })).toThrow('NOT_READY');
+  });
+
+  it('isSettled throws INVALID_PHASE when called from betting', () => {
+    const state = createInitialState('R', Config.SEAT_COUNT, 0);
+    expect(() => applyAction(state, { type: 'round:advance', seatId: state.players[0].id })).toThrow('INVALID_PHASE');
+  });
+});
+```
+
+- [ ] **Step 2: Run the tests**
+
+```bash
+npx jest test/state-machine-xstate.spec.ts
+```
+
+Expected: 10 new tests pass; 16 total in this file. (4 state graph + 2 roundtrip + 10 guards.)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add server/test/state-machine-xstate.spec.ts
+git commit -m "test(server): validation guards (10 focused tests)"
+```
+
+### Task 5.4: Run the full server test suite
 
 - [ ] **Step 1: Run all server tests**
 
@@ -1482,7 +1910,7 @@ npx jest
 npx tsc --noEmit
 ```
 
-Expected: 12+ suites pass; 35+ state-machine-related tests pass (24 existing + 9 draw-bridge + 6 new structural); typecheck clean.
+Expected: 12+ suites pass; 49+ state-machine-related tests pass (24 existing + 9 draw-bridge + 16 new structural); typecheck clean.
 
 - [ ] **Step 2: Run client tests**
 
