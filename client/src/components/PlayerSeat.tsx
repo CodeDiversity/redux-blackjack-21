@@ -57,6 +57,14 @@ const HandBlock = styled.div`
   margin-top: ${({ theme }) => theme.spacing.sm};
 `;
 
+const HandLabel = styled.div`
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: ${({ theme }) => theme.spacing.xs};
+  color: ${({ theme }) => theme.colors.textSecondary};
+`;
+
 const StatusText = styled.span`
   color: ${({ theme }) => theme.colors.textDim};
   font-size: ${({ theme }) => theme.typography.smallSize};
@@ -99,11 +107,7 @@ export function PlayerSeatView({ seat, isActive, isMe }: { seat: Seat; isActive:
       <Bankroll amount={seat.bankroll} />
       {seat.hands.map((h, i) => (
         <HandBlock key={i}>
-          {seat.hands.length > 1 && (
-            <div style={{ fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4, color: '#c9bfa8' }}>
-              Hand {i + 1}
-            </div>
-          )}
+          {seat.hands.length > 1 && <HandLabel>Hand {i + 1}</HandLabel>}
           <HandView hand={h} />
           <BetDisplay bet={h.bet} />
           <StatusText>{seat.status}</StatusText>
