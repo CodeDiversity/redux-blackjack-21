@@ -32,6 +32,7 @@ export type PlayerSeat = {
   hands: Hand[];
   status: SeatStatus;
   connectedAt: number;
+  lastBet: number;
 };
 
 export type Phase =
@@ -68,7 +69,8 @@ export type ClientCommand =
   | { type: 'hand:hit'; handIndex: number }
   | { type: 'hand:stand'; handIndex: number }
   | { type: 'hand:double'; handIndex: number }
-  | { type: 'hand:split'; handIndex: number };
+  | { type: 'hand:split'; handIndex: number }
+  | { type: 'round:advance' };
 
 /** Server-to-client wire events. */
 export type ServerEvent =
@@ -93,4 +95,5 @@ export type ErrorCode =
   | 'CANNOT_SPLIT'
   | 'HAND_LOCKED'
   | 'NAME_REQUIRED'
-  | 'NOT_READY';
+  | 'NOT_READY'
+  | 'NOT_HOST';

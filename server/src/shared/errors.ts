@@ -11,6 +11,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   HAND_LOCKED: 'This hand is no longer playable.',
   NAME_REQUIRED: 'Please enter a name.',
   NOT_READY: 'All seated players must place a bet first.',
+  NOT_HOST: 'Only the host can start the next hand.',
 };
 
 export function makeError(code: ErrorCode): { code: ErrorCode; message: string } {
