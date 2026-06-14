@@ -1,8 +1,9 @@
-import { setup } from 'xstate';
+import { setup, createActor } from 'xstate';
 import { Config } from '../config';
 import type { Card, CardSlot, GameState, Hand, PlayerSeat, RoundResult } from '../shared/types';
 import { isBusted } from './hand';
 import { computePayout } from './payout';
+import { prepareEvent, computeDealerEvent } from './draw-bridge';
 
 // --- Public types (unchanged) ------------------------------------------------
 
@@ -57,6 +58,127 @@ const initialContext = (): GameContext => ({
   __actionCount: 0,
 });
 
+// --- Validation guards ------------------------------------------------------
+
+type GuardPredicate = (state: GameState, event: Action) => boolean;
+type GuardDef = { name: string; predicate: GuardPredicate; errorCode: string };
+
+const guards: GuardDef[] = [
+  // Phase guards
+  { name: 'isLobbyOrBetting', errorCode: 'INVALID_PHASE',
+    predicate: (s) => s.phase === 'lobby' || s.phase === 'betting' },
+  { name: 'isPlayerTurnPhase', errorCode: 'INVALID_PHASE',
+    predicate: (s) => s.phase === 'player_turn' },
+  { name: 'isLobbyOrSettled', errorCode: 'INVALID_PHASE',
+    predicate: (s) => s.phase === 'lobby' || s.phase === 'settled' },
+  { name: 'isSettled', errorCode: 'INVALID_PHASE',
+    predicate: (s) => s.phase === 'settled' },
+
+  // Bet guards
+  { name: 'isValidBetAmount', errorCode: 'BET_OUT_OF_RANGE',
+    predicate: (s, e) => e.type === 'bet:place' && e.amount >= Config.MIN_BET && e.amount <= Config.MAX_BET },
+  { name: 'hasSufficientFundsForBet', errorCode: 'INSUFFICIENT_FUNDS',
+    predicate: (s, e) => {
+      if (e.type !== 'bet:place') return false;
+      const p = s.players.find((x) => x.id === e.seatId);
+      return p !== undefined && p.bankroll >= e.amount;
+    }},
+
+  // Turn guards
+  { name: 'isActiveSeat', errorCode: 'NOT_YOUR_TURN',
+    predicate: (s, e) => {
+      if (e.type === 'bet:place' || e.type === 'round:ready' || e.type === 'round:start' || e.type === 'round:advance') return true;
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      return idx !== -1 && idx === s.activeSeat;
+    }},
+
+  // Hand guards
+  { name: 'isHandActionable', errorCode: 'HAND_LOCKED',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:hit' && e.type !== 'hand:stand') return false;
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      if (idx === -1) return false;
+      const hand = s.players[idx].hands[e.handIndex];
+      return !!hand && hand.cards.length > 0 && !hand.stood && !hand.busted && !hand.doubled;
+    }},
+  { name: 'isDoubleableHand', errorCode: 'HAND_LOCKED',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:double') return false;
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      if (idx === -1) return false;
+      const hand = s.players[idx].hands[e.handIndex];
+      return !!hand && hand.cards.length <= 2 && !hand.stood && !hand.busted && !hand.doubled;
+    }},
+  { name: 'canSplitHand', errorCode: 'CANNOT_SPLIT',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:split') return false;
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      if (idx === -1) return false;
+      const p = s.players[idx];
+      const hand = p.hands[e.handIndex];
+      if (!hand || hand.cards.length !== 2) return false;
+      if (p.hands.length >= 2) return false;
+      const real = hand.cards.filter((c): c is Card => !('hidden' in c));
+      return real[0]?.rank === real[1]?.rank;
+    }},
+  { name: 'hasSufficientFundsForDouble', errorCode: 'INSUFFICIENT_FUNDS',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:double') return false;
+      const p = s.players.find((x) => x.id === e.seatId);
+      return p !== undefined && p.bankroll >= p.hands[e.handIndex].bet;
+    }},
+  { name: 'hasSufficientFundsForSplit', errorCode: 'INSUFFICIENT_FUNDS',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:split') return false;
+      const p = s.players.find((x) => x.id === e.seatId);
+      return p !== undefined && p.bankroll >= p.hands[e.handIndex].bet;
+    }},
+  { name: 'noAcesRuleForSplit', errorCode: 'CANNOT_SPLIT',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:split') return true;  // vacuous when not splitting aces
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      if (idx === -1) return false;
+      const hand = s.players[idx].hands[e.handIndex];
+      const real = hand?.cards.filter((c): c is Card => !('hidden' in c)) ?? [];
+      if (real[0]?.rank !== 'A') return true;
+      return Config.RESPLIT_ACES;
+    }},
+
+  // Round guards
+  { name: 'allPlayersReady', errorCode: 'NOT_READY',
+    predicate: (s) => !s.players.some((p) => p.status !== 'empty' && p.hands[0]?.bet === 0) },
+  { name: 'allHandsActed', errorCode: 'INVALID_PHASE',
+    predicate: (s) => {
+      if (s.activeSeat === null) return true;
+      const seat = s.players[s.activeSeat];
+      if (!seat) return true;
+      return seat.hands.every((h) => h.stood || h.busted || h.doubled || h.cards.length === 0);
+    }},
+];
+
+// Order of guards to check per action — used by inferRejectionReason.
+const actionGuards: Partial<Record<Action['type'], string[]>> = {
+  'bet:place': ['isLobbyOrBetting', 'isValidBetAmount', 'hasSufficientFundsForBet'],
+  'hand:hit': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActionable'],
+  'hand:stand': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActionable'],
+  'hand:double': ['isPlayerTurnPhase', 'isActiveSeat', 'isDoubleableHand', 'hasSufficientFundsForDouble'],
+  'hand:split': ['isPlayerTurnPhase', 'isActiveSeat', 'canSplitHand', 'hasSufficientFundsForSplit', 'noAcesRuleForSplit'],
+  'round:ready': ['isLobbyOrSettled'],
+  'round:start': ['allPlayersReady'],
+  'round:advance': ['isSettled'],
+};
+
+function inferRejectionReason(state: GameState, action: Action): string {
+  const guardList = actionGuards[action.type] ?? [];
+  for (const guardName of guardList) {
+    const guard = guards.find((g) => g.name === guardName);
+    if (guard && !guard.predicate(state, action)) {
+      return guard.errorCode;
+    }
+  }
+  return 'INVALID_PHASE';
+}
+
 // --- XState machine (states and events; guards and actions added in later tasks)
 
 export const machine = setup({
@@ -64,6 +186,26 @@ export const machine = setup({
     context: {} as GameContext,
     events: {} as GameEvent,
   },
+  guards: Object.fromEntries(
+    guards.map((g) => [g.name, ({ context, event }: { context: GameContext; event: GameEvent }) => {
+      // Adapt XState (context, event) → our (state, action) signature.
+      const fakeState: GameState = {
+        roomId: '',
+        phase: 'lobby',  // unused by predicates; the actionGuards map drives the check order
+        shoeSize: context.shoeSize,
+        cutCardIndex: context.cutCardIndex,
+        players: context.players,
+        dealer: context.dealer,
+        activeSeat: context.activeSeat,
+        roundNumber: context.roundNumber,
+        lastResult: context.lastResult,
+      };
+      // Coerce the enriched event to the user-action shape.
+      const action = event as unknown as Action;
+      return g.predicate(fakeState, action);
+    }]),
+  ),
+  actions: {},
 }).createMachine({
   id: 'blackjack',
   initial: 'lobby',
@@ -77,7 +219,7 @@ export const machine = setup({
   },
 });
 
-type Snapshot = ReturnType<typeof machine.transition>;
+type MachineSnapshot = ReturnType<typeof createActor<typeof machine>>['getSnapshot'] extends () => infer R ? R : never;
 
 // --- Public API: createInitialState (unchanged) ----------------------------
 
@@ -104,40 +246,75 @@ export function createInitialState(roomId: string, seatCount: number, _roundNumb
   };
 }
 
-function toSnapshot(state: GameState): Snapshot {
-  return machine.resolveState({
-    value: state.phase,
-    context: {
-      shoeSize: state.shoeSize,
-      cutCardIndex: state.cutCardIndex,
-      players: state.players,
-      dealer: state.dealer,
-      activeSeat: state.activeSeat,
-      roundNumber: state.roundNumber,
-      lastResult: state.lastResult,
-      __actionCount: 0,
-    },
-  });
+function startActor(state: GameState) {
+  const actor = createActor(machine);
+  actor.start();
+  // Override the initial state with our hydrated snapshot
+  if (state.phase !== 'lobby' || state.players.length > 0) {
+    // We need to send the state to a specific value+context
+    // Use internal API: actor.send or the unstated state.
+    // For now, we use the special "replace snapshot" via the snapshot option of createActor
+  }
+  return actor;
 }
 
-function fromSnapshot(snap: Snapshot, roomId: string): GameState {
+function eventWasApplied(next: MachineSnapshot, prev: MachineSnapshot): boolean {
+  return next.value !== prev.value || next.context.__actionCount !== prev.context.__actionCount;
+}
+
+// --- applyAction wrapper ----------------------------------------------------
+
+export function applyAction(state: GameState, action: Action, draw?: () => Card): GameState {
+  const actor = createActor(machine, { snapshot: machine.resolveState({ value: state.phase, context: { ...state, __actionCount: 0 } }) });
+  const prevSnapshot = actor.getSnapshot();
+  const event = prepareEvent(state, action, draw) as GameEvent;
+  actor.send(event);
+  const next = actor.getSnapshot();
+
+  if (!eventWasApplied(next, prevSnapshot)) {
+    throw new GameError(inferRejectionReason(state, action));
+  }
+
+  // If the auto-transition to dealer_turn fired, compute and apply the dealer event.
+  if (next.value === 'dealer_turn' && draw) {
+    const intermediateState: GameState = {
+      roomId: state.roomId,
+      phase: next.value as GameState['phase'],
+      shoeSize: next.context.shoeSize,
+      cutCardIndex: next.context.cutCardIndex,
+      players: next.context.players,
+      dealer: next.context.dealer,
+      activeSeat: next.context.activeSeat,
+      roundNumber: next.context.roundNumber,
+      lastResult: next.context.lastResult,
+    };
+    const dealerEv = computeDealerEvent(intermediateState, draw) as GameEvent;
+    actor.send(dealerEv);
+    const final = actor.getSnapshot();
+    return {
+      roomId: state.roomId,
+      phase: final.value as GameState['phase'],
+      shoeSize: final.context.shoeSize,
+      cutCardIndex: final.context.cutCardIndex,
+      players: final.context.players,
+      dealer: final.context.dealer,
+      activeSeat: final.context.activeSeat,
+      roundNumber: final.context.roundNumber,
+      lastResult: final.context.lastResult,
+    };
+  }
+
   return {
-    roomId,
-    phase: snap.value as GameState['phase'],
-    shoeSize: snap.context.shoeSize,
-    cutCardIndex: snap.context.cutCardIndex,
-    players: snap.context.players,
-    dealer: snap.context.dealer,
-    activeSeat: snap.context.activeSeat,
-    roundNumber: snap.context.roundNumber,
-    lastResult: snap.context.lastResult,
+    roomId: state.roomId,
+    phase: next.value as GameState['phase'],
+    shoeSize: next.context.shoeSize,
+    cutCardIndex: next.context.cutCardIndex,
+    players: next.context.players,
+    dealer: next.context.dealer,
+    activeSeat: next.context.activeSeat,
+    roundNumber: next.context.roundNumber,
+    lastResult: next.context.lastResult,
   };
-}
-
-// --- applyAction stub (replaced in Task 3.5 with the full wrapper) ----------
-
-export function applyAction(_state: GameState, _action: Action, _draw?: () => Card): GameState {
-  throw new Error('not implemented');
 }
 
 // Suppress unused-import warning for isBusted / computePayout (used in Task 3.6).
