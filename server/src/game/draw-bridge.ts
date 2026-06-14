@@ -5,13 +5,22 @@ import { dealerShouldHit } from './dealer';
 export type PreparedEvent = { type: string; [k: string]: unknown };
 
 export function prepareEvent(state: GameState, action: Action, draw?: () => Card): PreparedEvent {
-  // No-card actions: pass through unchanged.
-  const noCardActions: Action['type'][] = ['bet:place', 'hand:stand', 'round:ready', 'round:advance'];
-  if (noCardActions.includes(action.type)) {
-    return { ...action };
-  }
+  if (!draw) throw new Error('DRAW_REQUIRED');
 
-  throw new Error(`not implemented: ${action.type}`);
+  switch (action.type) {
+    case 'bet:place':
+    case 'hand:stand':
+    case 'round:ready':
+    case 'round:advance':
+      return { ...action };
+
+    case 'hand:hit':
+    case 'hand:double':
+      return { ...action, card: draw() };
+
+    default:
+      throw new Error(`not implemented: ${(action as Action).type}`);
+  }
 }
 
 export function computeDealerEvent(state: GameState, draw: () => Card): PreparedEvent {

@@ -17,4 +17,18 @@ describe('drawBridge.prepareEvent', () => {
     const ev = prepareEvent(state, { type: 'bet:place', seatId: state.players[0].id, amount: 50 }, draw);
     expect(ev).toEqual({ type: 'bet:place', seatId: state.players[0].id, amount: 50 });
   });
+
+  it('attaches 1 card to hand:hit', () => {
+    const state: GameState = { ...baseState(), phase: 'player_turn', activeSeat: 0 };
+    const draw = makeDraw([{ suit: '♦', rank: '7' }]);
+    const ev = prepareEvent(state, { type: 'hand:hit', seatId: state.players[0].id, handIndex: 0 }, draw);
+    expect(ev).toEqual({ type: 'hand:hit', seatId: state.players[0].id, handIndex: 0, card: { suit: '♦', rank: '7' } });
+  });
+
+  it('attaches 1 card to hand:double', () => {
+    const state: GameState = { ...baseState(), phase: 'player_turn', activeSeat: 0 };
+    const draw = makeDraw([{ suit: '♦', rank: 'K' }]);
+    const ev = prepareEvent(state, { type: 'hand:double', seatId: state.players[0].id, handIndex: 0 }, draw);
+    expect(ev).toEqual({ type: 'hand:double', seatId: state.players[0].id, handIndex: 0, card: { suit: '♦', rank: 'K' } });
+  });
 });
