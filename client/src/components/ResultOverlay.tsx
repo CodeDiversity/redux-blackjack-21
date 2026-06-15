@@ -1,7 +1,7 @@
 import { useSelector } from 'react-redux';
 import styled from 'styled-components';
-import { getSocket } from '../socket/client';
-import { selectAmIHost } from '../selectors/self';
+import { useNow } from '../lib/useNow';
+import { selectPhaseEndsAt } from '../selectors/self';
 import type { RootState } from '../store';
 
 const Modal = styled.div`
@@ -52,17 +52,11 @@ const PayoutRow = styled.li<{ $tone: 'good' | 'bad' | 'neutral' | 'gold' }>`
   font-weight: bold;
 `;
 
-const NextHandButton = styled.button`
-  background: ${({ theme }) => theme.colors.textPrimary};
-  color: ${({ theme }) => theme.colors.feltDark};
-  border: 1px solid ${({ theme }) => theme.colors.textSecondary};
-  border-radius: ${({ theme }) => theme.radii.sm};
-  padding: ${({ theme }) => `${theme.spacing.sm} ${theme.spacing.lg}`};
-  font-size: 12px;
-  font-weight: bold;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  cursor: pointer;
+const Countdown = styled.div`
+  color: ${({ theme }) => theme.colors.textSecondary};
+  font-size: ${({ theme }) => theme.typography.smallSize};
+  letter-spacing: 1.5px;
+  margin-top: ${({ theme }) => theme.spacing.md};
 `;
 
 function formatDelta(reason: 'win' | 'lose' | 'push' | 'blackjack', delta: number): string {
@@ -78,10 +72,16 @@ function toneFor(reason: 'win' | 'lose' | 'push' | 'blackjack', delta: number): 
   return 'neutral';
 }
 
+function formatRemaining(phaseEndsAt: number, now: number): number {
+  return Math.max(0, Math.ceil((phaseEndsAt - now) / 1000));
+}
+
 export function ResultOverlay() {
   const state = useSelector((s: RootState) => s.game.state);
-  const amHost = useSelector(selectAmIHost);
+  const phaseEndsAt = useSelector(selectPhaseEndsAt);
+  const now = useNow(1000);
   if (!state || state.phase !== 'settled' || !state.lastResult) return null;
+  const remaining = phaseEndsAt ? formatRemaining(phaseEndsAt, now) : null;
   return (
     <Modal className="result-overlay">
       <Card>
@@ -96,11 +96,7 @@ export function ResultOverlay() {
             );
           })}
         </PayoutList>
-        {amHost && (
-          <NextHandButton onClick={() => getSocket().emit('round:advance')}>
-            Next Hand
-          </NextHandButton>
-        )}
+        {remaining !== null && <Countdown>Next hand in {remaining}…</Countdown>}
       </Card>
     </Modal>
   );

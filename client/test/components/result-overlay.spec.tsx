@@ -15,11 +15,12 @@ function makeStore(opts: {
   phase: GameState['phase'];
   amIHost: boolean;
   lastResult: RoundResult | null;
+  phaseEndsAt?: number | null;
 }) {
   const state: GameState = {
     roomId: 'R',
     phase: opts.phase,
-    phaseEndsAt: null,
+    phaseEndsAt: opts.phaseEndsAt ?? null,
     shoeSize: 200,
     cutCardIndex: 50,
     players: [
@@ -64,17 +65,32 @@ describe('<ResultOverlay />', () => {
     expect(screen.getByText(/win/i)).toBeInTheDocument();
   });
 
-  it('shows Next Hand button to the host during settled', () => {
+  it('does not render the Next Hand button (it has been removed)', () => {
     const result: RoundResult = { payouts: [{ seatId: 's0', delta: 50, reason: 'win' }] };
-    const store = makeStore({ phase: 'settled', amIHost: true, lastResult: result });
-    renderWith(<ResultOverlay />, store);
-    expect(screen.getByRole('button', { name: /next hand/i })).toBeInTheDocument();
-  });
-
-  it('hides Next Hand button from non-hosts', () => {
-    const result: RoundResult = { payouts: [{ seatId: 's0', delta: 50, reason: 'win' }] };
-    const store = makeStore({ phase: 'settled', amIHost: false, lastResult: result });
+    const store = makeStore({ phase: 'settled', amIHost: true, lastResult: result, phaseEndsAt: Date.now() + 3000 });
     renderWith(<ResultOverlay />, store);
     expect(screen.queryByRole('button', { name: /next hand/i })).toBeNull();
+  });
+
+  it('does not render the Next Hand button for non-hosts', () => {
+    const result: RoundResult = { payouts: [{ seatId: 's0', delta: 50, reason: 'win' }] };
+    const store = makeStore({ phase: 'settled', amIHost: false, lastResult: result, phaseEndsAt: Date.now() + 3000 });
+    renderWith(<ResultOverlay />, store);
+    expect(screen.queryByRole('button', { name: /next hand/i })).toBeNull();
+  });
+
+  it('renders the countdown line with N seconds remaining during settled', () => {
+    const result: RoundResult = { payouts: [{ seatId: 's0', delta: 50, reason: 'win' }] };
+    const futureMs = Date.now() + 3_000;
+    const store = makeStore({ phase: 'settled', amIHost: true, lastResult: result, phaseEndsAt: futureMs });
+    renderWith(<ResultOverlay />, store);
+    expect(screen.getByText(/Next hand in 3…/)).toBeInTheDocument();
+  });
+
+  it('does not render the countdown line when phaseEndsAt is null', () => {
+    const result: RoundResult = { payouts: [{ seatId: 's0', delta: 50, reason: 'win' }] };
+    const store = makeStore({ phase: 'settled', amIHost: true, lastResult: result, phaseEndsAt: null });
+    renderWith(<ResultOverlay />, store);
+    expect(screen.queryByText(/Next hand in/i)).toBeNull();
   });
 });
