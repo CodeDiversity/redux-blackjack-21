@@ -35,6 +35,15 @@ export class RoomService {
     return { seatId, seatToken, state: room.state };
   }
 
+  resumeSeat(roomId: string, seatToken: string, newSocketId: string): { seatId: string; state: GameState } {
+    const room = this.rooms.get(roomId);
+    if (!room) throw new GameError('ROOM_NOT_FOUND');
+    const entry = [...room.seats.values()].find((e) => e.seatToken === seatToken);
+    if (!entry) throw new GameError('SEAT_GONE');
+    entry.socketId = newSocketId;
+    return { seatId: entry.seatId, state: room.state };
+  }
+
   leaveRoom(roomId: string, socketId: string): { state: GameState; destroyed: boolean; hostId?: string } {
     const room = this.rooms.get(roomId);
     if (!room) return { state: createInitialState(roomId, Config.SEAT_COUNT), destroyed: true };
