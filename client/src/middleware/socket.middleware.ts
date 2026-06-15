@@ -28,7 +28,6 @@ export const socketMiddleware = (getSocket: () => Socket): Middleware => () => (
     case 'socket/stand': getSocket().emit('hand:stand', { handIndex: action.handIndex }); return;
     case 'socket/double': getSocket().emit('hand:double', { handIndex: action.handIndex }); return;
     case 'socket/split': getSocket().emit('hand:split', { handIndex: action.handIndex }); return;
-    case 'socket/startRound': getSocket().emit('round:start'); return;
   }
   const result = next(action);
   return result;
