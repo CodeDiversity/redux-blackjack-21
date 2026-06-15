@@ -5,7 +5,6 @@ import { PlayerSeatView } from './PlayerSeat';
 import { EmptySeatTile } from './EmptySeatTile';
 import { ActionPanel } from './ActionPanel';
 import { BetPanel } from './BetPanel';
-import { DealButton } from './DealButton';
 import { ResultOverlay } from './ResultOverlay';
 import type { RootState } from '../store';
 
@@ -104,7 +103,6 @@ export function TableView() {
         </Seats>
         <BottomRow>
           <BetPanel />
-          <DealButton />
           <ActionPanel />
         </BottomRow>
         <ResultOverlay />

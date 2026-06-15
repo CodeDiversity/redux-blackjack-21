@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { ThemeProvider } from 'styled-components';
@@ -70,5 +70,12 @@ describe('TableView (5-seat layout)', () => {
     const { container } = renderWith(<TableView />, store);
     const empties = container.querySelectorAll('[aria-label="empty-seat"]');
     expect(empties.length).toBe(3);
+  });
+
+  it('does not render a Deal button (removed in auto-advance refactor)', () => {
+    const store = makeStore(makeSeats());
+    const { container } = renderWith(<TableView />, store);
+    expect(container.querySelector('[class*="deal-button"], button[class*="deal"]')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^deal$/i })).toBeNull();
   });
 });
