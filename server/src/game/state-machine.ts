@@ -93,6 +93,13 @@ const guards: GuardDef[] = [
     }},
 
   // Hand guards
+  { name: 'isHandActive', errorCode: 'HAND_LOCKED',
+    predicate: (s, e) => {
+      if (e.type !== 'hand:hit' && e.type !== 'hand:stand' && e.type !== 'hand:double' && e.type !== 'hand:split') return false;
+      const idx = s.players.findIndex((p) => p.id === e.seatId);
+      if (idx === -1) return false;
+      return e.handIndex === s.players[idx].activeHandIndex;
+    }},
   { name: 'isHandActionable', errorCode: 'HAND_LOCKED',
     predicate: (s, e) => {
       if (e.type !== 'hand:hit' && e.type !== 'hand:stand') return false;
@@ -159,10 +166,10 @@ const guards: GuardDef[] = [
 // Order of guards to check per action — used by inferRejectionReason.
 const actionGuards: Partial<Record<Action['type'], string[]>> = {
   'bet:place': ['isLobbyOrBetting', 'isValidBetAmount', 'hasSufficientFundsForBet'],
-  'hand:hit': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActionable'],
-  'hand:stand': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActionable'],
-  'hand:double': ['isPlayerTurnPhase', 'isActiveSeat', 'isDoubleableHand', 'hasSufficientFundsForDouble'],
-  'hand:split': ['isPlayerTurnPhase', 'isActiveSeat', 'canSplitHand', 'hasSufficientFundsForSplit', 'noAcesRuleForSplit'],
+  'hand:hit': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActive', 'isHandActionable'],
+  'hand:stand': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActive', 'isHandActionable'],
+  'hand:double': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActive', 'isDoubleableHand', 'hasSufficientFundsForDouble'],
+  'hand:split': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActive', 'canSplitHand', 'hasSufficientFundsForSplit', 'noAcesRuleForSplit'],
   'round:ready': ['isLobbyOrSettled'],
   'round:start': ['allPlayersReady'],
   'round:advance': ['isSettled'],
@@ -238,6 +245,7 @@ export const machine = setup({
     isValidBetAmount: makeGuardFn(guards.find((g) => g.name === 'isValidBetAmount')!),
     hasSufficientFundsForBet: makeGuardFn(guards.find((g) => g.name === 'hasSufficientFundsForBet')!),
     isActiveSeat: makeGuardFn(guards.find((g) => g.name === 'isActiveSeat')!),
+    isHandActive: makeGuardFn(guards.find((g) => g.name === 'isHandActive')!),
     isHandActionable: makeGuardFn(guards.find((g) => g.name === 'isHandActionable')!),
     isDoubleableHand: makeGuardFn(guards.find((g) => g.name === 'isDoubleableHand')!),
     canSplitHand: makeGuardFn(guards.find((g) => g.name === 'canSplitHand')!),
@@ -427,10 +435,10 @@ export const machine = setup({
     },
     player_turn: {
       on: {
-        'hand:hit': { actions: 'assignHit', guard: and(['isActiveSeat', 'isHandActionable']) },
-        'hand:stand': { actions: 'assignStand', guard: and(['isActiveSeat', 'isHandActionable']) },
-        'hand:double': { actions: 'assignDouble', guard: and(['isActiveSeat', 'isDoubleableHand', 'hasSufficientFundsForDouble']) },
-        'hand:split': { actions: 'assignSplit', guard: and(['isActiveSeat', 'canSplitHand', 'hasSufficientFundsForSplit', 'noAcesRuleForSplit']) },
+        'hand:hit': { actions: 'assignHit', guard: and(['isActiveSeat', 'isHandActive', 'isHandActionable']) },
+        'hand:stand': { actions: 'assignStand', guard: and(['isActiveSeat', 'isHandActive', 'isHandActionable']) },
+        'hand:double': { actions: 'assignDouble', guard: and(['isActiveSeat', 'isHandActive', 'isDoubleableHand', 'hasSufficientFundsForDouble']) },
+        'hand:split': { actions: 'assignSplit', guard: and(['isActiveSeat', 'isHandActive', 'canSplitHand', 'hasSufficientFundsForSplit', 'noAcesRuleForSplit']) },
       },
       always: [{ guard: 'allHandsActed', target: 'dealer_turn' }],
     },

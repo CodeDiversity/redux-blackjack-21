@@ -208,3 +208,60 @@ describe('validation guards', () => {
     expect(() => applyAction(state, { type: 'round:advance', seatId: state.players[0].id })).toThrow('INVALID_PHASE');
   });
 });
+
+describe('handIndex validation against activeHandIndex', () => {
+  function makePlayerTurnFixture() {
+    // Seat 0 has 2 hands (post-split). activeHandIndex is 0.
+    const seat0Id = 's0';
+    const hand0: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♠', rank: '8' }, { suit: '♥', rank: '8' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    const hand1: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♦', rank: '8' }, { suit: '♣', rank: '5' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    return createInitialState('R', Config.SEAT_COUNT).players.map((p, i) =>
+      i === 0 ? { ...p, id: seat0Id, name: 'Alice', status: 'acting' as const, hands: [hand0, hand1], activeHandIndex: 0 } : p
+    );
+  }
+
+  it('rejects hand:hit with handIndex=1 when activeHandIndex=0', () => {
+    const players = makePlayerTurnFixture();
+    const state: GameState = {
+      ...createInitialState('R', Config.SEAT_COUNT),
+      phase: 'player_turn',
+      activeSeat: 0,
+      players,
+    };
+    expect(() =>
+      applyAction(state, { type: 'hand:hit', seatId: 's0', handIndex: 1 }, () => ({ suit: '♠', rank: 'A' })),
+    ).toThrow('HAND_LOCKED');
+  });
+
+  it('rejects hand:stand with handIndex=1 when activeHandIndex=0', () => {
+    const players = makePlayerTurnFixture();
+    const state: GameState = {
+      ...createInitialState('R', Config.SEAT_COUNT),
+      phase: 'player_turn',
+      activeSeat: 0,
+      players,
+    };
+    expect(() =>
+      applyAction(state, { type: 'hand:stand', seatId: 's0', handIndex: 1 }),
+    ).toThrow('HAND_LOCKED');
+  });
+
+  it('rejects hand:double with handIndex=1 when activeHandIndex=0', () => {
+    const players = makePlayerTurnFixture();
+    const state: GameState = {
+      ...createInitialState('R', Config.SEAT_COUNT),
+      phase: 'player_turn',
+      activeSeat: 0,
+      players,
+    };
+    expect(() =>
+      applyAction(state, { type: 'hand:double', seatId: 's0', handIndex: 1 }, () => ({ suit: '♠', rank: 'A' })),
+    ).toThrow('HAND_LOCKED');
+  });
+});
