@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import styled from 'styled-components';
 import { getSocket } from '../socket/client';
+import { storeSeatToken } from '../lib/seat-token';
 import { selfSeatAssigned } from '../store/connection.slice';
 
 const Page = styled.div`
@@ -152,6 +153,7 @@ export function Home() {
     if (!name.trim()) { setError('Please enter a name'); return; }
     getSocket().emit('room:create', { name: name.trim() }, (resp: { seatId: string; seatToken: string; roomId: string } | { ok: false; code: string }) => {
       if ('seatId' in resp) {
+        storeSeatToken(resp.roomId, resp.seatToken);
         dispatch(selfSeatAssigned({ seatId: resp.seatId, seatToken: resp.seatToken }));
         navigate(`/room/${resp.roomId}`);
       } else setError(resp?.code ?? 'Failed to create room');
