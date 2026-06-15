@@ -12,7 +12,6 @@ export function prepareEvent(state: GameState, action: Action, draw?: () => Card
     case 'bet:place':
     case 'hand:stand':
     case 'round:ready':
-    case 'round:advance':
       return { ...action };
 
     case 'hand:hit':
@@ -22,12 +21,13 @@ export function prepareEvent(state: GameState, action: Action, draw?: () => Card
     case 'hand:split':
       return { ...action, leftCard: draw(), rightCard: draw() };
 
-    case 'round:start': {
+    case 'round:betDeadline': {
+      // Same shape as round:start: pre-draw 2 cards per betting player + 1 dealer upcard.
       const dealtCards: { playerIndex: number; cards: [Card, Card] }[] = [];
       state.players.forEach((p, i) => {
-        if (p.hands[0]?.bet && p.hands[0].bet > 0) {
-          dealtCards.push({ playerIndex: i, cards: [draw(), draw()] });
-        }
+        if (p.status === 'empty' || p.status === 'sitting_out') return;
+        if (p.hands[0]?.bet === 0) return;  // unbetter; will be sat out
+        dealtCards.push({ playerIndex: i, cards: [draw(), draw()] });
       });
       return { ...action, dealtCards, dealerUpcard: draw() };
     }

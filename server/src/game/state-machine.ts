@@ -14,8 +14,6 @@ export type Action =
   | { type: 'hand:double'; seatId: string; handIndex: number }
   | { type: 'hand:split'; seatId: string; handIndex: number }
   | { type: 'round:ready'; seatId: string }
-  | { type: 'round:start'; seatId: string }
-  | { type: 'round:advance'; seatId: string }
   | { type: 'round:betDeadline'; seatId: string };
 
 export class GameError extends Error {
@@ -31,9 +29,7 @@ export type GameEvent =
   | { type: 'hand:double'; seatId: string; handIndex: number; card: Card }
   | { type: 'hand:split'; seatId: string; handIndex: number; leftCard: Card; rightCard: Card }
   | { type: 'round:ready'; seatId: string }
-  | { type: 'round:start'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card }
   | { type: 'round:dealerPlay'; dealerFinalHand: CardSlot[] }
-  | { type: 'round:advance'; seatId: string }
   | { type: 'round:betDeadline'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card };
 
 // --- XState context ---------------------------------------------------------
