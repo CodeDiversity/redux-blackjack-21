@@ -46,6 +46,11 @@ describe('gateway integration: 2-player full round', () => {
     });
     await guestLobbyPromise;
 
+    // Transition out of lobby phase so bets are accepted (lobby only handles round:ready).
+    const readyPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'betting');
+    host.emit('round:ready');
+    await readyPromise;
+
     const betState1 = listen<GameState>(host, 'game:state');
     const betState2 = listen<GameState>(guest, 'game:state');
     host.emit('bet:place', { amount: 50 });
