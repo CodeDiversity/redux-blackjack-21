@@ -14,7 +14,7 @@ export class RoomService {
     const state = createInitialState(roomId, Config.SEAT_COUNT);
     const seatId = randomUUID();
     const seatToken = randomUUID();
-    const seat = this.assignSeat(state, seatId, hostSocketId, hostName);
+    this.assignSeat(state, seatId, hostSocketId, hostName);
     const room: Room = {
       id: roomId,
       state,
@@ -30,7 +30,7 @@ export class RoomService {
     if (room.seats.size >= Config.SEAT_COUNT) throw new GameError('ROOM_FULL');
     const seatId = randomUUID();
     const seatToken = randomUUID();
-    const seat = this.assignSeat(room.state, seatId, socketId, name);
+    this.assignSeat(room.state, seatId, socketId, name);
     room.seats.set(seatId, { socketId, seatId, seatToken, name });
     return { seatId, seatToken, state: room.state };
   }
