@@ -14,7 +14,8 @@ export type Action =
   | { type: 'hand:double'; seatId: string; handIndex: number }
   | { type: 'hand:split'; seatId: string; handIndex: number }
   | { type: 'round:ready'; seatId: string }
-  | { type: 'round:betDeadline'; seatId: string };
+  | { type: 'round:betDeadline'; seatId: string }
+  | { type: 'round:advance'; seatId: string };
 
 export class GameError extends Error {
   constructor(public code: string) { super(code); }
@@ -30,7 +31,8 @@ export type GameEvent =
   | { type: 'hand:split'; seatId: string; handIndex: number; leftCard: Card; rightCard: Card }
   | { type: 'round:ready'; seatId: string }
   | { type: 'round:dealerPlay'; dealerFinalHand: CardSlot[] }
-  | { type: 'round:betDeadline'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card | null };
+  | { type: 'round:betDeadline'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card | null }
+  | { type: 'round:advance'; seatId: string };
 
 // --- XState context ---------------------------------------------------------
 
@@ -428,6 +430,20 @@ export const machine = setup({
         lastResult: null,
       };
     }),
+    assignAdvance: assign(({ context }) => {
+      const emptyHand: Hand = { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false };
+      return {
+        __actionCount: context.__actionCount + 1,
+        dealer: { ...emptyHand },
+        players: context.players.map((p) => {
+          if (p.status === 'empty' || p.status === 'sitting_out') return p;
+          if (p.bankroll === 0) return { ...p, hands: [emptyHand], status: 'sitting_out' as const };
+          return { ...p, hands: [emptyHand], status: 'betting' as const };
+        }),
+        activeSeat: null,
+        lastResult: null,
+      };
+    }),
     assignBetDeadlineEmpty: assign(({ context }) => {
       return {
         __actionCount: context.__actionCount + 1,
@@ -468,6 +484,7 @@ export const machine = setup({
     settled: {
       on: {
         'round:ready': { target: 'betting', actions: 'assignReady' },
+        'round:advance': { target: 'betting', actions: 'assignAdvance' },
       },
       entry: 'assignSettle',
     },
