@@ -205,6 +205,27 @@ function findNextActingSeat(players: PlayerSeat[], from: number): number | null 
   return null;
 }
 
+// Walk to the next acting seat (after `from`) and reset its activeHandIndex
+// to the first incomplete hand. Returns the new activeSeat index, or null if
+// no acting seat is found (signals dealer_turn).
+function advanceToNextActingSeat(players: PlayerSeat[], from: number): { seat: number | null; players: PlayerSeat[] } {
+  const n = players.length;
+  for (let i = 1; i <= n; i++) {
+    const idx = (from + i) % n;
+    const s = players[idx];
+    const firstIncomplete = s.hands.findIndex(
+      (h) => !h.stood && !h.busted && !h.doubled && h.cards.length > 0,
+    );
+    if (firstIncomplete !== -1) {
+      const newPlayers = players.map((p, j) =>
+        j === idx ? { ...p, activeHandIndex: firstIncomplete, status: 'acting' as const } : p,
+      );
+      return { seat: idx, players: newPlayers };
+    }
+  }
+  return { seat: null, players };
+}
+
 function makeGuardFn(g: GuardDef) {
   return ({ context, event }: { context: GameContext; event: GameEvent }) => {
     // Adapt XState (context, event) → our (state, action) signature.
@@ -298,14 +319,14 @@ export const machine = setup({
       const nextHandIndex = event.handIndex + 1;
       const stillHasHand = handComplete && nextHandIndex < newHands.length &&
         !newHands[nextHandIndex].stood && !newHands[nextHandIndex].busted && !newHands[nextHandIndex].doubled;
-      const newPlayers = context.players.map((p, i) =>
+      const midPlayers = context.players.map((p, i) =>
         i === context.activeSeat
           ? { ...p, hands: newHands, activeHandIndex: handComplete ? nextHandIndex : player.activeHandIndex }
           : p,
       );
-      const activeSeat = handComplete
-        ? (stillHasHand ? context.activeSeat : findNextActingSeat(newPlayers, context.activeSeat!))
-        : context.activeSeat;
+      const { seat: activeSeat, players: newPlayers } = handComplete
+        ? (stillHasHand ? { seat: context.activeSeat, players: midPlayers } : advanceToNextActingSeat(midPlayers, context.activeSeat!))
+        : { seat: context.activeSeat, players: midPlayers };
       return {
         __actionCount: context.__actionCount + 1,
         shoeSize: context.shoeSize - 1,
@@ -321,14 +342,14 @@ export const machine = setup({
       const nextHandIndex = event.handIndex + 1;
       const stillHasHand = nextHandIndex < newHands.length &&
         !newHands[nextHandIndex].stood && !newHands[nextHandIndex].busted && !newHands[nextHandIndex].doubled;
-      const newPlayers = context.players.map((p, i) =>
+      const midPlayers = context.players.map((p, i) =>
         i === context.activeSeat
           ? { ...p, hands: newHands, activeHandIndex: stillHasHand ? nextHandIndex : seat.activeHandIndex }
           : p,
       );
-      const activeSeat = stillHasHand
-        ? context.activeSeat
-        : findNextActingSeat(newPlayers, context.activeSeat!);
+      const { seat: activeSeat, players: newPlayers } = stillHasHand
+        ? { seat: context.activeSeat, players: midPlayers }
+        : advanceToNextActingSeat(midPlayers, context.activeSeat!);
       return {
         __actionCount: context.__actionCount + 1,
         players: newPlayers,
@@ -345,14 +366,14 @@ export const machine = setup({
       const nextHandIndex = event.handIndex + 1;
       const stillHasHand = nextHandIndex < newHands.length &&
         !newHands[nextHandIndex].stood && !newHands[nextHandIndex].busted && !newHands[nextHandIndex].doubled;
-      const newPlayers = context.players.map((p, i) =>
+      const midPlayers = context.players.map((p, i) =>
         i === context.activeSeat
           ? { ...p, bankroll: p.bankroll - hand.bet, hands: newHands, activeHandIndex: stillHasHand ? nextHandIndex : player.activeHandIndex }
           : p,
       );
-      const activeSeat = stillHasHand
-        ? context.activeSeat
-        : findNextActingSeat(newPlayers, context.activeSeat!);
+      const { seat: activeSeat, players: newPlayers } = stillHasHand
+        ? { seat: context.activeSeat, players: midPlayers }
+        : advanceToNextActingSeat(midPlayers, context.activeSeat!);
       return {
         __actionCount: context.__actionCount + 1,
         shoeSize: context.shoeSize - 1,

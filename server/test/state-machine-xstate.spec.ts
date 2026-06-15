@@ -388,3 +388,49 @@ describe('activeHandIndex walks all hands in order', () => {
     expect(next.activeSeat).toBeNull();
   });
 });
+
+describe('activeHandIndex resets when a new seat becomes active', () => {
+  it('seat 2 with hand 1 incomplete (hand 0 done) becomes active with activeHandIndex=1', () => {
+    // Seat 0 has stood on both hands; seat 1 is empty; seat 2 is the next to act.
+    // After seat 0's last stand, the table should advance to seat 2 and set
+    // seat 2's activeHandIndex to 1 (the first incomplete hand).
+    const handDone0: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♠', rank: 'K' }, { suit: '♥', rank: '9' }],
+      bet: 50, stood: true, busted: false, isBlackjack: false, doubled: false,
+    };
+    const handDone1: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♦', rank: 'K' }, { suit: '♣', rank: '7' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    const handReady: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♠', rank: '9' }, { suit: '♥', rank: '7' }],
+      bet: 50, stood: true, busted: false, isBlackjack: false, doubled: false,
+    };
+    const handPending: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♦', rank: 'K' }, { suit: '♣', rank: '5' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    const players = createInitialState('R', Config.SEAT_COUNT).players.map((p, i) => {
+      if (i === 0) {
+        return {
+          ...p, id: 's0', name: 'Alice', status: 'acting' as const, activeHandIndex: 1,
+          hands: [handDone0, handDone1],
+        };
+      }
+      if (i === 2) {
+        return {
+          ...p, id: 's2', name: 'Carol', status: 'acting' as const, activeHandIndex: 0,
+          hands: [handReady, handPending],
+        };
+      }
+      return p;
+    });
+    const state: GameState = {
+      ...createInitialState('R', Config.SEAT_COUNT), phase: 'player_turn', activeSeat: 0, players,
+    };
+    const next = applyAction(state, { type: 'hand:stand', seatId: 's0', handIndex: 1 });
+    // Expected: activeSeat moves to 2; seat 2's activeHandIndex is 1 (first incomplete hand).
+    expect(next.activeSeat).toBe(2);
+    expect(next.players[2].activeHandIndex).toBe(1);
+  });
+});
