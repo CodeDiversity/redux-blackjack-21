@@ -577,7 +577,3 @@ export function applyAction(state: GameState, action: Action, draw?: () => Card)
     lastResult: next.context.lastResult,
   };
 }
-
-// Suppress unused-import warning for isBusted / computePayout (used in Task 3.6).
-void isBusted;
-void computePayout;
