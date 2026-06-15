@@ -9,7 +9,7 @@ import { Lobby } from '../components/Lobby';
 import { TableView } from '../components/TableView';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { ErrorToast } from '../components/ErrorToast';
-import { errorReceived, selfSeatCleared } from '../store/connection.slice';
+import { errorReceived, selfSeatAssigned, selfSeatCleared } from '../store/connection.slice';
 import { toastShown } from '../store/ui.slice';
 import type { RootState } from '../store';
 
@@ -38,7 +38,13 @@ export function Table() {
       if (!code || !token) return;
       if (emittedForCodeRef.current === code) return;
       emittedForCodeRef.current = code;
-      socket.emit('room:resume', { roomId: code, seatToken: token }, () => {});
+      socket.emit('room:resume', { roomId: code, seatToken: token }, (resp: { seatId?: string } | undefined) => {
+        // The server returns the seatId on success. Restore it to the
+        // connection store so `amHost` is true after a reload. Without
+        // this, a reloaded host sees "Waiting for host to start..."
+        // because selfSeatId is null and the host-claim check fails.
+        if (resp?.seatId) dispatch(selfSeatAssigned({ seatId: resp.seatId, seatToken: token }));
+      });
     };
 
     // Try once on mount; the ref guard makes this a no-op on subsequent
@@ -51,7 +57,7 @@ export function Table() {
       socket.off('connect', tryResume);
       socket.off('reconnect', tryResume);
     };
-  }, [code]);
+  }, [code, dispatch]);
 
   // Effect 2: react to SEAT_GONE and other server errors.
   useEffect(() => {
