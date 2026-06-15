@@ -187,27 +187,11 @@ function inferRejectionReason(state: GameState, action: Action): string {
 
 // --- XState machine (states and events; guards and actions added in later tasks)
 
-// Find the next acting seat (after `from`) that still has an actionable hand.
-// Wraps around the table. If no such seat exists, return `null` — signaling that
-// the allHandsActed auto-transition should move the machine to dealer_turn.
-function findNextActingSeat(players: PlayerSeat[], from: number): number | null {
-  const n = players.length;
-  for (let i = 1; i <= n; i++) {
-    const idx = (from + i) % n;
-    const s = players[idx];
-    if (
-      s.status === 'acting' &&
-      s.hands.some((h) => !h.stood && !h.busted && !h.doubled && h.cards.length > 0)
-    ) {
-      return idx;
-    }
-  }
-  return null;
-}
-
-// Walk to the next acting seat (after `from`) and reset its activeHandIndex
-// to the first incomplete hand. Returns the new activeSeat index, or null if
-// no acting seat is found (signals dealer_turn).
+// Walk to the next acting seat (after `from`) and reset its `activeHandIndex`
+// to the first incomplete hand. Also sets the seat's `status` to `'acting'`
+// (in case it was `'sitting_out'` or another non-acting state). Returns the
+// new activeSeat index, or `null` if no acting seat is found (signals the
+// `allHandsActed` auto-transition to `dealer_turn`).
 function advanceToNextActingSeat(players: PlayerSeat[], from: number): { seat: number | null; players: PlayerSeat[] } {
   const n = players.length;
   for (let i = 1; i <= n; i++) {

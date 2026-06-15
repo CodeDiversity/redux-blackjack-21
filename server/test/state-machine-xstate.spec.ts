@@ -391,8 +391,8 @@ describe('activeHandIndex walks all hands in order', () => {
 
 describe('activeHandIndex resets when a new seat becomes active', () => {
   it('seat 2 with hand 1 incomplete (hand 0 done) becomes active with activeHandIndex=1', () => {
-    // Seat 0 has stood on both hands; seat 1 is empty; seat 2 is the next to act.
-    // After seat 0's last stand, the table should advance to seat 2 and set
+    // Seat 0 is acting on hand 1 (its last incomplete hand); hand 0 is already stood.
+    // After seat 0's stand on hand 1, the table should advance to seat 2 and set
     // seat 2's activeHandIndex to 1 (the first incomplete hand).
     const handDone0: GameState['players'][0]['hands'][0] = {
       cards: [{ suit: '♠', rank: 'K' }, { suit: '♥', rank: '9' }],
