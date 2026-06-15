@@ -162,11 +162,11 @@ export function Home() {
     if (!name.trim()) { setError('Please enter a name'); return; }
     if (!code.trim()) { setError('Please enter a room code'); return; }
     const roomCode = code.trim().toUpperCase();
-    getSocket().emit('room:join', { roomId: roomCode, name: name.trim() }, (resp: any) => {
-      if (resp?.seatId) {
+    getSocket().emit('room:join', { roomId: roomCode, name: name.trim() }, (resp: { seatId: string; seatToken: string } | { ok: false; code: string }) => {
+      if ('seatId' in resp) {
         dispatch(selfSeatAssigned({ seatId: resp.seatId, seatToken: resp.seatToken }));
         navigate(`/room/${roomCode}`);
-      } else setError(resp?.code ?? 'Failed to join');
+      } else setError(resp.code);
     });
     getSocket().once('error', (err: { message: string }) => setError(err.message));
   };
