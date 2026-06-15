@@ -97,4 +97,5 @@ export type ErrorCode =
   | 'HAND_LOCKED'
   | 'NAME_REQUIRED'
   | 'NOT_READY'
-  | 'NOT_HOST';
+  | 'NOT_HOST'
+  | 'SEAT_GONE';
