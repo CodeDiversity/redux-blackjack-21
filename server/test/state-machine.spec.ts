@@ -295,3 +295,54 @@ describe('applyAction: round:advance', () => {
     expect(() => applyAction(state, { type: 'round:advance', seatId: state.players[0].id })).toThrow('INVALID_PHASE');
   });
 });
+
+describe('hasAtLeastOneBet guard', () => {
+  it('returns true when at least one seated player has hands[0].bet > 0', () => {
+    const state: GameState = {
+      ...newRoom(),
+      players: [
+        { id: 'p0', name: 'A', bankroll: 1000, hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'betting', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
+        { id: 'p1', name: 'B', bankroll: 1000, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'betting', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
+      ],
+    };
+    // Import the guard from the state machine's internal array.
+    const { guards } = require('../src/game/state-machine');
+    const guard = guards.find((g: any) => g.name === 'hasAtLeastOneBet')!;
+    expect(guard).toBeTruthy();
+    expect(guard.predicate(state, { type: 'bet:place', seatId: 'p0', amount: 100 })).toBe(true);
+  });
+
+  it('returns false when no seated player has bet', () => {
+    const state = newRoom();  // all seats are empty in newRoom; that's "no seated player" → false
+    const { guards } = require('../src/game/state-machine');
+    const guard = guards.find((g: any) => g.name === 'hasAtLeastOneBet')!;
+    expect(guard.predicate(state, { type: 'bet:place', seatId: 'p0', amount: 100 })).toBe(false);
+  });
+
+  it('returns false when all seated players have bet === 0', () => {
+    const state: GameState = {
+      ...newRoom(),
+      players: [
+        { id: 'p0', name: 'A', bankroll: 1000, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'betting', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
+        { id: 'p1', name: 'B', bankroll: 1000, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'betting', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
+      ],
+    };
+    const { guards } = require('../src/game/state-machine');
+    const guard = guards.find((g: any) => g.name === 'hasAtLeastOneBet')!;
+    expect(guard.predicate(state, { type: 'bet:place', seatId: 'p0', amount: 100 })).toBe(false);
+  });
+
+  it('ignores empty and sitting_out seats', () => {
+    const state: GameState = {
+      ...newRoom(),
+      players: [
+        { id: 'p0', name: 'A', bankroll: 1000, hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'betting', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
+        { id: 'p1', name: 'B', bankroll: 1000, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'sitting_out', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
+        { id: 'p2', name: 'C', bankroll: 1000, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'empty', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
+      ],
+    };
+    const { guards } = require('../src/game/state-machine');
+    const guard = guards.find((g: any) => g.name === 'hasAtLeastOneBet')!;
+    expect(guard.predicate(state, { type: 'bet:place', seatId: 'p0', amount: 100 })).toBe(true);
+  });
+});

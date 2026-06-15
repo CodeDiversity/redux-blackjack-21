@@ -63,7 +63,7 @@ const initialContext = (): GameContext => ({
 type GuardPredicate = (state: GameState, event: Action) => boolean;
 type GuardDef = { name: string; predicate: GuardPredicate; errorCode: string };
 
-const guards: GuardDef[] = [
+export const guards: GuardDef[] = [
   // Phase guards
   { name: 'isLobbyOrBetting', errorCode: 'INVALID_PHASE',
     predicate: (s) => s.phase === 'lobby' || s.phase === 'betting' },
@@ -154,6 +154,9 @@ const guards: GuardDef[] = [
   // Round guards
   { name: 'allPlayersReady', errorCode: 'NOT_READY',
     predicate: (s) => !s.players.some((p) => p.status !== 'empty' && p.hands[0]?.bet === 0) },
+  { name: 'hasAtLeastOneBet', errorCode: 'NO_BETS',
+    predicate: (s) => s.players.some((p) =>
+      p.status !== 'empty' && p.status !== 'sitting_out' && p.hands[0]?.bet > 0) },
   { name: 'allHandsActed', errorCode: 'INVALID_PHASE',
     predicate: (s) => {
       const acting = s.players.filter((p) => p.status === 'acting');
