@@ -93,7 +93,7 @@ function pillLabel(isActive: boolean, status: Seat['status']): string {
 
 export function PlayerSeatView({ seat, isActive, isMe }: { seat: Seat; isActive: boolean; isMe: boolean }) {
   return (
-    <SeatBox $active={isActive}>
+    <SeatBox $active={isActive} aria-label={`seat-${seat.name}`}>
       <Header>
         <Name>
           {seat.name}
