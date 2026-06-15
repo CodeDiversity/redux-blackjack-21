@@ -13,6 +13,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   NOT_READY: 'All seated players must place a bet first.',
   NOT_HOST: 'Only the host can start the next hand.',
   SEAT_GONE: 'Seat no longer available.',
+  NO_BETS: 'At least one player must place a bet.',
 };
 
 export function makeError(code: ErrorCode): { code: ErrorCode; message: string } {

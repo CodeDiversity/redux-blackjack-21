@@ -99,4 +99,5 @@ export type ErrorCode =
   | 'NAME_REQUIRED'
   | 'NOT_READY'
   | 'NOT_HOST'
-  | 'SEAT_GONE';
+  | 'SEAT_GONE'
+  | 'NO_BETS';
