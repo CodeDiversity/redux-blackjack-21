@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectMySeat, selectMyLastBet, selectCanRebet } from '../../src/selectors/self';
+import { selectMySeat, selectMyLastBet, selectCanRebet, selectPhaseEndsAt } from '../../src/selectors/self';
 import type { RootState } from '../../src/store';
 import type { GameState, PlayerSeat } from '../../src/shared/types';
 
@@ -78,5 +78,36 @@ describe('selectCanRebet', () => {
 
   it('is false when no seat', () => {
     expect(selectCanRebet(stateWith(null))).toBe(false);
+  });
+});
+
+describe('selectPhaseEndsAt', () => {
+  it('returns the game state phaseEndsAt', () => {
+    const root: RootState = {
+      game: {
+        state: {
+          roomId: 'R', phase: 'betting', phaseEndsAt: 1_700_000_000_000,
+          shoeSize: 200, cutCardIndex: 50,
+          players: [],
+          dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
+          activeSeat: null, roundNumber: 1, lastResult: null,
+        },
+        lastResult: null,
+      },
+      connection: { selfSeatId: 's0', status: 'connected' as const, lastError: null },
+      lobby: { roomId: 'R', hostId: 's0', players: [] },
+      ui: { betInputValue: 50, toasts: [] },
+    } as unknown as RootState;
+    expect(selectPhaseEndsAt(root)).toBe(1_700_000_000_000);
+  });
+
+  it('returns null when no game state', () => {
+    const root: RootState = {
+      game: { state: null, lastResult: null },
+      connection: { selfSeatId: 's0', status: 'connected' as const, lastError: null },
+      lobby: { roomId: 'R', hostId: 's0', players: [] },
+      ui: { betInputValue: 50, toasts: [] },
+    } as unknown as RootState;
+    expect(selectPhaseEndsAt(root)).toBeNull();
   });
 });

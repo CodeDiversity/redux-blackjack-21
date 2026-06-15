@@ -24,3 +24,5 @@ export const selectCanRebet = createSelector(
   [selectMySeat],
   (me) => !!me && me.lastBet > 0 && me.lastBet <= me.bankroll && me.status === 'betting',
 );
+
+export const selectPhaseEndsAt = (s: RootState) => s.game.state?.phaseEndsAt ?? null;
