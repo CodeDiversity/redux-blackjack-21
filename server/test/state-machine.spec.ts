@@ -187,15 +187,19 @@ describe('settle: lastBet population', () => {
         : { ...p, status: 'acting', bankroll: 1000, hands: [{ ...p.hands[0], bet: 200, cards: [{ suit: '♠', rank: 'K' }, { suit: '♥', rank: 'A' }] }] }),
       dealer: { ...state.dealer, cards: [{ suit: '♣', rank: 'K' }, { suit: '♦', rank: '5' }] },
     };
-    // Drive to settled by having both stand.
+    // Drive to settled by standing every acting player.
     const deck: Card[] = [
-      { suit: '♣', rank: '5' },                              // dealer hole reveal for player 0 stand
-      { suit: '♣', rank: '9' },                              // dealer hole reveal for player 1 stand
+      { suit: '♣', rank: '5' },                              // dealer hole reveal / dealer event draw
+      { suit: '♣', rank: '9' },                              // spare
     ];
     let i = 0;
     const draw = () => deck[i++];
-    let next = applyAction(state, { type: 'hand:stand', seatId: state.players[0].id, handIndex: 0 }, draw);
-    next = applyAction(next, { type: 'hand:stand', seatId: state.players[1].id, handIndex: 0 }, draw);
+    let next = state;
+    for (const player of state.players) {
+      if (player.status === 'acting') {
+        next = applyAction(next, { type: 'hand:stand', seatId: player.id, handIndex: 0 }, draw);
+      }
+    }
     expect(next.phase).toBe('settled');
     expect(next.players[0].lastBet).toBe(75);
     expect(next.players[1].lastBet).toBe(200);

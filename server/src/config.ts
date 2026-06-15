@@ -1,6 +1,6 @@
 export const Config = {
   PORT: Number(process.env.PORT ?? 3001),
-  SEAT_COUNT: 2,
+  SEAT_COUNT: 5,
   MIN_BET: 10,
   MAX_BET: 500,
   STARTING_BANKROLL: 1000,
