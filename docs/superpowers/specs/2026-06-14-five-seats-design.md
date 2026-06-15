@@ -47,7 +47,7 @@ Six tightly coupled changes that share files (especially `TableView.tsx` and `st
 - `client/src/components/PlayerList.tsx` (card size, gap)
 - `client/src/components/TableView.tsx` (width, grid, no longer filter empty)
 - `client/src/components/EmptySeatTile.tsx` (new)
-- `client/src/components/PlayerList.spec.tsx` (new) or extend existing
+- `client/src/components/PlayerList.spec.tsx` (new — no existing spec)
 - `client/src/components/TableView.spec.tsx` (new)
 - `client/e2e/five-player.spec.ts` (new)
 
@@ -101,8 +101,11 @@ Initial value: `0` for any seat (the value is only meaningful when the seat is t
 Every `hand:hit`, `hand:stand`, `hand:double`, and `hand:split` carries a `handIndex`. The state machine validates it matches the seat's `activeHandIndex` and rejects mismatches with the existing `HAND_LOCKED` error code:
 
 ```ts
-// in applyAction
-const seat = state.players[state.activeSeat!];
+// in applyAction, runs after the existing NOT_YOUR_TURN check
+if (state.activeSeat === null || state.phase !== 'player_turn') {
+  throw new GameError('NOT_YOUR_TURN');
+}
+const seat = state.players[state.activeSeat];
 if (action.handIndex !== seat.activeHandIndex) {
   throw new GameError('HAND_LOCKED');
 }
@@ -121,7 +124,7 @@ After `hand:hit`, `hand:stand`, or `hand:double`, the state machine checks if th
 - **double**: always complete (hand grows by 1, then stands).
 - **hit**: complete if `busted` or `handTotal(realCards) === 21`. Standard rule.
 
-If complete, increment `seat.activeHandIndex`. If `activeHandIndex >= hands.length`, the seat is done — call `advanceTurn`.
+If complete, increment `seat.activeHandIndex`. If `activeHandIndex >= hands.length`, the seat is done — set its `status` to the appropriate terminal value (`stood` / `busted` / `blackjack`, depending on the just-acted hand's outcome) and call `advanceTurn`.
 
 ### `advanceTurn` rewrite
 
