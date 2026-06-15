@@ -84,6 +84,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       // game-state eviction). leaveRoom is safe to call either way.
       const { state, destroyed } = this.rooms.leaveRoom(roomId, oldSocketId);
       if (destroyed) {
+        this.cancelAutoAdvance(roomId);  // clear any pending settle/bet timer before teardown
         this.games.discardRoom(roomId);
         return;
       }
