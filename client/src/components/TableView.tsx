@@ -29,7 +29,7 @@ const TableSurface = styled.div`
   border-radius: ${({ theme }) => theme.radii.pill};
   box-shadow: ${({ theme }) => theme.shadows.table};
   padding: ${({ theme }) => theme.spacing.xxl};
-  width: min(1100px, 100%);
+  width: min(1500px, 100%);
   font-family: ${({ theme }) => theme.typography.fontFamily};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
@@ -53,9 +53,13 @@ const Brand = styled.div`
 
 const Seats = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(5, 1fr);
   gap: ${({ theme }) => theme.spacing.xl};
   margin-top: ${({ theme }) => theme.spacing.sm};
+
+  @media (max-width: 1100px) {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
 `;
 
 const BottomRow = styled.div`
