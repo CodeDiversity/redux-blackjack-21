@@ -1,8 +1,9 @@
 import { useSelector, useDispatch } from 'react-redux';
 import styled from 'styled-components';
 import { getSocket } from '../socket/client';
+import { useNow } from '../lib/useNow';
 import { betInputChanged } from '../store/ui.slice';
-import { selectCanRebet, selectMyLastBet } from '../selectors/self';
+import { selectCanRebet, selectMyLastBet, selectPhaseEndsAt } from '../selectors/self';
 import type { RootState } from '../store';
 
 const Wrapper = styled.div`
@@ -49,14 +50,27 @@ const SecondaryButton = styled.button`
   cursor: pointer;
 `;
 
+const Countdown = styled.div`
+  color: ${({ theme }) => theme.colors.textDim};
+  font-size: ${({ theme }) => theme.typography.smallSize};
+  letter-spacing: 1.5px;
+  margin-left: ${({ theme }) => theme.spacing.md};
+`;
+
 export function BetPanel() {
   const phase = useSelector((s: RootState) => s.game.state?.phase);
+  const phaseEndsAt = useSelector(selectPhaseEndsAt);
   const bet = useSelector((s: RootState) => s.ui.betInputValue);
   const canRebet = useSelector(selectCanRebet);
   const lastBet = useSelector(selectMyLastBet);
+  const now = useNow(1000);
   const dispatch = useDispatch();
 
   if (phase !== 'betting') return null;
+
+  const remaining = phaseEndsAt
+    ? Math.max(0, Math.ceil((phaseEndsAt - now) / 1000))
+    : null;
 
   return (
     <Wrapper className="bet-panel">
@@ -76,6 +90,7 @@ export function BetPanel() {
           Rebet ${lastBet}
         </SecondaryButton>
       )}
+      {remaining !== null && <Countdown>Betting closes in {remaining}…</Countdown>}
     </Wrapper>
   );
 }

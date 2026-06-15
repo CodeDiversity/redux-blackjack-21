@@ -12,9 +12,10 @@ import * as socketClient from '../../src/socket/client';
 import type { GameState } from '../../src/shared/types';
 import { theme } from '../../src/styles/theme';
 
-function makeStore(opts: { phase: GameState['phase']; lastBet: number; bankroll: number; status: GameState['players'][number]['status'] }) {
+function makeStore(opts: { phase: GameState['phase']; lastBet: number; bankroll: number; status: GameState['players'][number]['status']; phaseEndsAt?: number | null }) {
   const state: GameState = {
-    roomId: 'R', phase: opts.phase, phaseEndsAt: null, shoeSize: 200, cutCardIndex: 50,
+    roomId: 'R', phase: opts.phase, phaseEndsAt: opts.phaseEndsAt ?? null,
+    shoeSize: 200, cutCardIndex: 50,
     players: [{ id: 's0', name: 'Alice', bankroll: opts.bankroll, hands: [], status: opts.status, connectedAt: 0, lastBet: opts.lastBet, activeHandIndex: 0 }],
     dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
     activeSeat: null, roundNumber: 1, lastResult: null,
@@ -76,5 +77,23 @@ describe('<BetPanel />', () => {
     renderWith(<BetPanel />, store);
     fireEvent.click(screen.getByRole('button', { name: /rebet \$75/i }));
     expect(emit).toHaveBeenCalledWith('bet:place', { amount: 75 });
+  });
+
+  it('renders the countdown line during betting when phaseEndsAt is set', () => {
+    const store = makeStore({ phase: 'betting', lastBet: 0, bankroll: 1000, status: 'betting', phaseEndsAt: Date.now() + 10_000 });
+    renderWith(<BetPanel />, store);
+    expect(screen.getByText(/Betting closes in 10…/)).toBeInTheDocument();
+  });
+
+  it('does not render the countdown line outside the betting phase', () => {
+    const store = makeStore({ phase: 'player_turn', lastBet: 0, bankroll: 1000, status: 'acting', phaseEndsAt: null });
+    renderWith(<BetPanel />, store);
+    expect(screen.queryByText(/Betting closes in/i)).toBeNull();
+  });
+
+  it('does not render the countdown line when phaseEndsAt is null', () => {
+    const store = makeStore({ phase: 'betting', lastBet: 0, bankroll: 1000, status: 'betting', phaseEndsAt: null });
+    renderWith(<BetPanel />, store);
+    expect(screen.queryByText(/Betting closes in/i)).toBeNull();
   });
 });
