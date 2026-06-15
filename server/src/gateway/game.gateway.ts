@@ -31,12 +31,22 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private pendingLeaves = new Map<string, NodeJS.Timeout>();
 
   /**
+   * Pending round-advance timers. Keyed by `roomId`. Holds the `setTimeout`
+   * handle and the ms-epoch when it will fire. The value's `fireAt` is what
+   * we attach to the `game:state` payload as `phaseEndsAt` so clients can
+   * render countdowns without an extra wire event.
+   */
+  private pendingTimers = new Map<string, { timer: NodeJS.Timeout; fireAt: number }>();
+
+  /**
    * Clear all pending leave timers on module destroy so the Node event loop
    * can exit and stale callbacks don't fire against a torn-down instance.
    */
   onModuleDestroy() {
     for (const timer of this.pendingLeaves.values()) clearTimeout(timer);
     this.pendingLeaves.clear();
+    for (const entry of this.pendingTimers.values()) clearTimeout(entry.timer);
+    this.pendingTimers.clear();
   }
 
   constructor(
@@ -89,6 +99,41 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     clearTimeout(timer);
     this.pendingLeaves.delete(leaveKey);
     return true;
+  }
+
+  private scheduleAutoAdvance(roomId: string, phase: 'settled' | 'betting') {
+    this.cancelAutoAdvance(roomId);
+    const ms = phase === 'settled' ? Config.SETTLE_PAUSE_MS : Config.BET_DEADLINE_MS;
+    const fireAt = Date.now() + ms;
+    const timer = setTimeout(() => this.fireAutoAdvance(roomId, phase), ms);
+    this.pendingTimers.set(roomId, { timer, fireAt });
+  }
+
+  private cancelAutoAdvance(roomId: string) {
+    const entry = this.pendingTimers.get(roomId);
+    if (entry) { clearTimeout(entry.timer); this.pendingTimers.delete(roomId); }
+  }
+
+  private fireAutoAdvance(roomId: string, phase: 'settled' | 'betting') {
+    this.pendingTimers.delete(roomId);
+    const room = this.rooms.getState(roomId);
+    if (!room) return;
+    if (room.phase !== phase) return;  // race: phase changed
+    try {
+      if (phase === 'settled') {
+        // Server-internal round:advance. seatId '__server__' is a sentinel for tracing.
+        this.rooms.apply(roomId, { type: 'round:advance', seatId: '__server__' });
+        this.broadcastAll(roomId, this.rooms.getState(roomId)!);
+      } else {
+        this.games.ensureShoe(roomId, this.rooms.getState(roomId)!);
+        const draw = () => this.games.draw(roomId).card;
+        this.rooms.apply(roomId, { type: 'round:betDeadline', seatId: '__server__' }, draw);
+        this.broadcastAll(roomId, this.rooms.getState(roomId)!);
+      }
+    } catch (e) {
+      if (!(e instanceof GameError)) throw e;
+      this.log.warn(`auto-advance failed: ${(e as GameError).code}`);
+    }
   }
 
   @SubscribeMessage('room:create')
