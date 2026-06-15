@@ -20,19 +20,18 @@ describe('RoomService.resumeSeat', () => {
     const { roomId, seatToken } = svc.createRoom('socket-A', 'Alice');
     const result = svc.resumeSeat(roomId, seatToken, 'socket-A2');
     expect(result.seatId).toBeTruthy();
-    const room = (svc as any).rooms.get(roomId);
-    const entry = [...room.seats.values()][0];
-    expect(entry.socketId).toBe('socket-A2');
+    expect(svc.roomForSocket('socket-A2')).toEqual({ roomId, seatId: result.seatId });
+    expect(svc.roomForSocket('socket-A')).toBeUndefined();
   });
 
   it('throws ROOM_NOT_FOUND when the roomId is unknown', () => {
     const svc = new RoomService();
-    expect(() => svc.resumeSeat('NOPE', 'whatever', 'socket-A')).toThrow();
+    expect(() => svc.resumeSeat('NOPE', 'whatever', 'socket-A')).toThrow('ROOM_NOT_FOUND');
   });
 
-  it('throws GameError(SEAT_GONE) when the token is unknown', () => {
+  it('throws SEAT_GONE when the token is unknown', () => {
     const svc = new RoomService();
     const { roomId } = svc.createRoom('socket-A', 'Alice');
-    expect(() => svc.resumeSeat(roomId, 'bogus-token', 'socket-A2')).toThrow();
+    expect(() => svc.resumeSeat(roomId, 'bogus-token', 'socket-A2')).toThrow('SEAT_GONE');
   });
 });
