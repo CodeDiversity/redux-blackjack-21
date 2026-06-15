@@ -30,7 +30,7 @@ export type GameEvent =
   | { type: 'hand:split'; seatId: string; handIndex: number; leftCard: Card; rightCard: Card }
   | { type: 'round:ready'; seatId: string }
   | { type: 'round:dealerPlay'; dealerFinalHand: CardSlot[] }
-  | { type: 'round:betDeadline'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card };
+  | { type: 'round:betDeadline'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card | null };
 
 // --- XState context ---------------------------------------------------------
 
@@ -171,8 +171,7 @@ const actionGuards: Partial<Record<Action['type'], string[]>> = {
   'hand:double': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActive', 'isDoubleableHand', 'hasSufficientFundsForDouble'],
   'hand:split': ['isPlayerTurnPhase', 'isActiveSeat', 'isHandActive', 'canSplitHand', 'hasSufficientFundsForSplit', 'noAcesRuleForSplit'],
   'round:ready': ['isLobbyOrSettled'],
-  'round:start': ['allPlayersReady'],
-  'round:advance': ['isSettled'],
+  'round:betDeadline': ['hasAtLeastOneBet'],
 };
 
 function inferRejectionReason(state: GameState, action: Action): string {
@@ -261,6 +260,7 @@ export const machine = setup({
     hasSufficientFundsForSplit: makeGuardFn(guards.find((g) => g.name === 'hasSufficientFundsForSplit')!),
     noAcesRuleForSplit: makeGuardFn(guards.find((g) => g.name === 'noAcesRuleForSplit')!),
     allPlayersReady: makeGuardFn(guards.find((g) => g.name === 'allPlayersReady')!),
+    hasAtLeastOneBet: makeGuardFn(guards.find((g) => g.name === 'hasAtLeastOneBet')!),
     allHandsActed: ({ context, event }: { context: GameContext; event: GameEvent }) => {
       // Only fire the auto-transition after a hand:* event that completed a hand.
       // (Don't fire for hand:double / hand:split, which leave the player with a hand to act on.)
@@ -313,7 +313,7 @@ export const machine = setup({
       return {
         __actionCount: context.__actionCount + 1,
         players: dealtPlayers,
-        dealer: { ...context.dealer, cards: [event.dealerUpcard, hiddenCard] },
+        dealer: { ...context.dealer, cards: [event.dealerUpcard as Card, hiddenCard] },
         activeSeat: actingIndex === -1 ? null : actingIndex,
         roundNumber: context.roundNumber + 1,
         lastResult: null,
@@ -486,7 +486,10 @@ export const machine = setup({
     betting: {
       on: {
         'bet:place': { actions: 'assignBet', guard: and(['isValidBetAmount', 'hasSufficientFundsForBet']) },
-        'round:start': { target: 'player_turn', actions: 'assignDeal', guard: 'allPlayersReady' },
+        'round:betDeadline': [
+          { target: 'player_turn', actions: 'assignBetDeadline', guard: 'hasAtLeastOneBet' },
+          { target: 'betting', actions: 'assignBetDeadlineEmpty' },
+        ],
       },
     },
     player_turn: {

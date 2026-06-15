@@ -72,6 +72,22 @@ describe('XState machine: state graph shape', () => {
   });
 });
 
+describe('betting state: round:betDeadline transitions', () => {
+  it('has two transitions: one to player_turn (guarded by hasAtLeastOneBet), one to betting (re-loop)', () => {
+    // XState v5 exposes the resolved machine config (the typed state node
+    // tree) as `machine.config`. We walk into the betting state's `on` map
+    // to inspect the `round:betDeadline` transition array.
+    const bettingNode = (machine as any).config.states.betting;
+    const on = bettingNode.on;
+    const transitions = on['round:betDeadline'] as any[];
+    expect(Array.isArray(transitions)).toBe(true);
+    expect(transitions.length).toBe(2);
+    expect(transitions[0].target).toBe('player_turn');
+    expect(transitions[0].guard).toBe('hasAtLeastOneBet');
+    expect(transitions[1].target).toBe('betting');
+  });
+});
+
 describe('snapshot roundtrip', () => {
   // NOTE: This block exercises the roundtrip through the public `applyAction`
   // API rather than the (currently inlined) `toSnapshot` / `fromSnapshot`

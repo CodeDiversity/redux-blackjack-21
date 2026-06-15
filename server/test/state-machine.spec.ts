@@ -354,9 +354,9 @@ describe('applyAction: round:betDeadline (with bets)', () => {
       ...state,
       players: state.players.map((p, i) =>
         i === 0
-          ? { ...p, name: 'Alice', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          ? { ...p, name: 'Alice', status: 'betting', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
           : i === 1
-          ? { ...p, name: 'Bob', hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          ? { ...p, name: 'Bob', status: 'betting', hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }] }
           : p,
       ),
     };
@@ -383,9 +383,9 @@ describe('applyAction: round:betDeadline (with bets)', () => {
       ...state,
       players: state.players.map((p, i) =>
         i === 0
-          ? { ...p, name: 'Alice', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          ? { ...p, name: 'Alice', status: 'betting', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
           : i === 1
-          ? { ...p, name: 'Bob', hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          ? { ...p, name: 'Bob', status: 'betting', hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }] }
           : p,
       ),
     };
@@ -412,9 +412,9 @@ describe('applyAction: round:betDeadline (with bets)', () => {
       ...state,
       players: state.players.map((p, i) =>
         i === 0
-          ? { ...p, name: 'Alice', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          ? { ...p, name: 'Alice', status: 'betting', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
           : i === 1
-          ? { ...p, name: 'Bob', lastBet: 50, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          ? { ...p, name: 'Bob', status: 'betting', lastBet: 50, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }] }
           : p,
       ),
     };
@@ -440,7 +440,7 @@ describe('applyAction: round:betDeadline (with bets)', () => {
       ...state,
       players: state.players.map((p, i) =>
         i === 0
-          ? { ...p, name: 'Alice', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          ? { ...p, name: 'Alice', status: 'betting', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
           : p,
       ),
     };

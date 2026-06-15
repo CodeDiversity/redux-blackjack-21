@@ -29,6 +29,10 @@ export function prepareEvent(state: GameState, action: Action, draw?: () => Card
         if (p.hands[0]?.bet === 0) return;  // unbetter; will be sat out
         dealtCards.push({ playerIndex: i, cards: [draw(), draw()] });
       });
+      // Re-loop case: no betting players. Don't burn a dealer upcard.
+      if (dealtCards.length === 0) {
+        return { ...action, dealtCards, dealerUpcard: null as unknown as Card };
+      }
       return { ...action, dealtCards, dealerUpcard: draw() };
     }
 
