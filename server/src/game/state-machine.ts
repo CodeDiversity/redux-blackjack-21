@@ -520,18 +520,6 @@ export function createInitialState(roomId: string, seatCount: number, _roundNumb
   };
 }
 
-function startActor(state: GameState) {
-  const actor = createActor(machine);
-  actor.start();
-  // Override the initial state with our hydrated snapshot
-  if (state.phase !== 'lobby' || state.players.length > 0) {
-    // We need to send the state to a specific value+context
-    // Use internal API: actor.send or the unstated state.
-    // For now, we use the special "replace snapshot" via the snapshot option of createActor
-  }
-  return actor;
-}
-
 function eventWasApplied(next: MachineSnapshot, prev: MachineSnapshot): boolean {
   return next.value !== prev.value || next.context.__actionCount !== prev.context.__actionCount;
 }
