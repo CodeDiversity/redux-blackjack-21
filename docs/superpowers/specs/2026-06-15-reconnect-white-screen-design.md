@@ -83,9 +83,10 @@ App-level seat tokens persisted in `localStorage` per room, plus a new
 - Looks up the seat entry by `seatToken` within the room. If not found,
   emit `error { code: 'SEAT_GONE' }`.
 - If found: rebind `entry.socketId = client.id`, update `socketToRoom`,
-  re-broadcast `lobby:state` and `game:state` to the room (so the rest of
-  the table sees the player is back), and emit both to the resuming client
-  so it populates its store.
+  call `client.join(roomId)` (so the resuming socket is in the room
+  channel for future broadcasts), re-broadcast `lobby:state` and
+  `game:state` to the room (so the rest of the table sees the player is
+  back), and emit both to the resuming client so it populates its store.
 - Return value: `{ seatId }` (the client already has the token; no need to
   return it again).
 
@@ -110,21 +111,31 @@ App-level seat tokens persisted in `localStorage` per room, plus a new
 
 - Replaces the current `useEffect` that subscribes to `socket.on('connect')`
   and calls `prompt()`.
-- On mount:
-  - Compute `token = getStoredSeatToken(code)`.
-  - If `token` is non-null: emit `room:resume` with `{ roomId: code,
-    seatToken: token }` after the socket is connected (use a `'connect'` /
-    `'reconnect'` listener; gate with a `useRef` flag so StrictMode
-    double-mount and socket reconnects do not fire it twice).
+- One effect, dependencies `[code, dispatch]`:
+  - On mount or when `code` changes: compute
+    `token = getStoredSeatToken(code)`. If `token` is non-null, register a
+    `'connect'` listener and a `'reconnect'` listener on the socket. Both
+    listeners check a `useRef<boolean>(false)` flag
+    (`didEmitForThisMountRef.current`) and, if not yet set, set it to true
+    and call `getSocket().emit('room:resume', { roomId: code,
+    seatToken: token })`. The flag is reset on unmount. This guarantees:
+    - the first `'connect'` (initial connection) fires exactly one
+      `room:resume`;
+    - subsequent `'reconnect'` events (network blip) fire another
+      `room:resume` with the same token;
+    - StrictMode's mount→unmount→mount sequence in dev does not produce
+      a duplicate emit.
   - If `token` is null: render `<NamePrompt roomCode={code} />` (inline form
     styled like the Home page input card). Submitting it emits
     `room:join` with the entered name; on success, persist the returned
-    `seatToken` via `storeSeatToken(code, seatToken)`.
-- `connection.status` from Redux gates the resume/join behaviour:
-  - On `'reconnect'` events from socket.io (when status was previously
-    `'reconnecting'`), re-emit `room:resume` with the stored token.
-- `error` listener on the socket: on `SEAT_GONE`, clear stored token, show
-  toast, navigate to `/`.
+    `seatToken` via `storeSeatToken(code, seatToken)`. After persistence
+    the effect re-runs on the next state change (the redux `selfSeatId`
+    update is enough to re-render Table, replacing NamePrompt with
+    Lobby / TableView).
+- A separate effect handles server `error` events from the socket: on
+  `SEAT_GONE`, clear the stored token via `clearStoredSeatToken(code)`,
+  show a toast, and `navigate('/')`. This listener is registered once
+  on mount and torn down on unmount.
 
 **`<NamePrompt>` component (new, in `client/src/components/NamePrompt.tsx`)**
 
@@ -141,11 +152,11 @@ App-level seat tokens persisted in `localStorage` per room, plus a new
 
 **StrictMode safety**
 
-- A `useRef<boolean>` (`didEmitRef`) is set to `true` on the first emit and
-  blocks subsequent emits from the same mount. Combined with effect cleanup
-  that resets the ref on unmount, navigating between rooms re-arms it.
-- Per-room gating: the ref is keyed on `code` so changing the URL re-runs
-  the resume/join flow correctly.
+- A `useRef<boolean>(false)` (`didEmitForThisMountRef`) is set to `true` on
+  the first emit from a `'connect'` or `'reconnect'` listener and blocks
+  subsequent emits from the same mount. The effect's cleanup resets the
+  ref to `false` on unmount, and the effect's `[code, dispatch]`
+  dependency means changing the URL re-arms the flow.
 
 **Token lifecycle**
 
