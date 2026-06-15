@@ -265,3 +265,75 @@ describe('handIndex validation against activeHandIndex', () => {
     ).toThrow('HAND_LOCKED');
   });
 });
+
+describe('activeHandIndex walks all hands in order', () => {
+  function makeSplitSeat() {
+    const hand0: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♠', rank: '8' }, { suit: '♥', rank: '8' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    const hand1: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♦', rank: '8' }, { suit: '♣', rank: '5' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    return {
+      ...createInitialState('R', Config.SEAT_COUNT).players[0],
+      id: 's0',
+      name: 'Alice',
+      status: 'acting' as const,
+      hands: [hand0, hand1],
+      activeHandIndex: 0,
+    };
+  }
+
+  function fixtureWithSeat(seatIdx: number): GameState {
+    const players = createInitialState('R', Config.SEAT_COUNT).players.map((p, i) =>
+      i === seatIdx ? makeSplitSeat() : p,
+    );
+    return {
+      ...createInitialState('R', Config.SEAT_COUNT),
+      phase: 'player_turn',
+      activeSeat: seatIdx,
+      players,
+    };
+  }
+
+  it('hand:stand on hand 0 advances activeHandIndex to 1 within the same seat', () => {
+    const state = fixtureWithSeat(0);
+    const next = applyAction(state, { type: 'hand:stand', seatId: 's0', handIndex: 0 });
+    expect(next.activeSeat).toBe(0);
+    expect(next.players[0].activeHandIndex).toBe(1);
+    expect(next.players[0].hands[0].stood).toBe(true);
+    expect(next.players[0].hands[1].stood).toBe(false);
+  });
+
+  it('hand:double on hand 0 advances activeHandIndex to 1 within the same seat', () => {
+    const state = fixtureWithSeat(0);
+    const next = applyAction(state, { type: 'hand:double', seatId: 's0', handIndex: 0 }, () => ({ suit: '♠', rank: 'A' }));
+    expect(next.activeSeat).toBe(0);
+    expect(next.players[0].activeHandIndex).toBe(1);
+    expect(next.players[0].hands[0].doubled).toBe(true);
+  });
+
+  it('hand:hit on hand 1 to bust advances to next seat (no further hands)', () => {
+    const hand0: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♠', rank: '8' }, { suit: '♥', rank: '8' }],
+      bet: 50, stood: true, busted: false, isBlackjack: false, doubled: false,
+    };
+    const hand1: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♦', rank: 'K' }, { suit: '♣', rank: '6' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    const players = createInitialState('R', Config.SEAT_COUNT).players.map((p, i) =>
+      i === 0
+        ? { ...p, id: 's0', name: 'Alice', status: 'acting' as const, activeHandIndex: 1, hands: [hand0, hand1] }
+        : p,
+    );
+    const state: GameState = {
+      ...createInitialState('R', Config.SEAT_COUNT), phase: 'player_turn', activeSeat: 0, players,
+    };
+    const next = applyAction(state, { type: 'hand:hit', seatId: 's0', handIndex: 1 }, () => ({ suit: '♠', rank: 'K' }));
+    expect(next.players[0].hands[1].busted).toBe(true);
+    expect(next.players[0].activeHandIndex).toBe(2);
+  });
+});
