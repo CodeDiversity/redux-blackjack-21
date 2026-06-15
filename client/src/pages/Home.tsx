@@ -150,9 +150,9 @@ export function Home() {
 
   const create = () => {
     if (!name.trim()) { setError('Please enter a name'); return; }
-    getSocket().emit('room:create', { name: name.trim() }, (resp: { seatId: string; roomId: string } | { ok: false; code: string }) => {
+    getSocket().emit('room:create', { name: name.trim() }, (resp: { seatId: string; seatToken: string; roomId: string } | { ok: false; code: string }) => {
       if ('seatId' in resp) {
-        dispatch(selfSeatAssigned(resp.seatId));
+        dispatch(selfSeatAssigned({ seatId: resp.seatId, seatToken: resp.seatToken }));
         navigate(`/room/${resp.roomId}`);
       } else setError(resp?.code ?? 'Failed to create room');
     });
@@ -164,7 +164,7 @@ export function Home() {
     const roomCode = code.trim().toUpperCase();
     getSocket().emit('room:join', { roomId: roomCode, name: name.trim() }, (resp: any) => {
       if (resp?.seatId) {
-        dispatch(selfSeatAssigned(resp.seatId));
+        dispatch(selfSeatAssigned({ seatId: resp.seatId, seatToken: resp.seatToken }));
         navigate(`/room/${roomCode}`);
       } else setError(resp?.code ?? 'Failed to join');
     });
