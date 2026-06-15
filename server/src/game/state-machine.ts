@@ -15,7 +15,8 @@ export type Action =
   | { type: 'hand:split'; seatId: string; handIndex: number }
   | { type: 'round:ready'; seatId: string }
   | { type: 'round:start'; seatId: string }
-  | { type: 'round:advance'; seatId: string };
+  | { type: 'round:advance'; seatId: string }
+  | { type: 'round:betDeadline'; seatId: string };
 
 export class GameError extends Error {
   constructor(public code: string) { super(code); }
@@ -32,7 +33,8 @@ export type GameEvent =
   | { type: 'round:ready'; seatId: string }
   | { type: 'round:start'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card }
   | { type: 'round:dealerPlay'; dealerFinalHand: CardSlot[] }
-  | { type: 'round:advance'; seatId: string };
+  | { type: 'round:advance'; seatId: string }
+  | { type: 'round:betDeadline'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card };
 
 // --- XState context ---------------------------------------------------------
 
@@ -276,6 +278,32 @@ export const machine = setup({
     assignDeal: assign(({ context, event }) => {
       if (event.type !== 'round:start') return {};
       const dealtPlayers = context.players.map((p, i) => {
+        const deal = event.dealtCards.find((d) => d.playerIndex === i);
+        if (!deal) return p;
+        return {
+          ...p,
+          hands: [{ ...p.hands[0], cards: [...deal.cards] }],
+          status: 'acting' as const,
+        };
+      });
+      const actingIndex = dealtPlayers.findIndex((p) => p.status === 'acting');
+      const hiddenCard: CardSlot = { hidden: true };
+      return {
+        __actionCount: context.__actionCount + 1,
+        players: dealtPlayers,
+        dealer: { ...context.dealer, cards: [event.dealerUpcard, hiddenCard] },
+        activeSeat: actingIndex === -1 ? null : actingIndex,
+        roundNumber: context.roundNumber + 1,
+        lastResult: null,
+      };
+    }),
+    assignBetDeadline: assign(({ context, event }) => {
+      if (event.type !== 'round:betDeadline') return {};
+      const dealtPlayers = context.players.map((p, i) => {
+        // Auto-sit-out seated players who didn't bet.
+        if (p.status !== 'empty' && p.status !== 'sitting_out' && p.hands[0]?.bet === 0) {
+          return { ...p, status: 'sitting_out' as const };
+        }
         const deal = event.dealtCards.find((d) => d.playerIndex === i);
         if (!deal) return p;
         return {

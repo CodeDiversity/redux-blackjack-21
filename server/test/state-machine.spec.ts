@@ -346,3 +346,119 @@ describe('hasAtLeastOneBet guard', () => {
     expect(guard.predicate(state, { type: 'bet:place', seatId: 'p0', amount: 100 })).toBe(true);
   });
 });
+
+describe('applyAction: round:betDeadline (with bets)', () => {
+  it('transitions betting → player_turn and deals cards to bettors when at least 1 player has bet', () => {
+    let state = newRoom();
+    state = {
+      ...state,
+      players: state.players.map((p, i) =>
+        i === 0
+          ? { ...p, name: 'Alice', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          : i === 1
+          ? { ...p, name: 'Bob', hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          : p,
+      ),
+    };
+    const deck: Card[] = [
+      { suit: '♠', rank: '5' },  // Alice card 1
+      { suit: '♥', rank: '6' },  // Alice card 2
+      { suit: '♦', rank: 'K' },  // dealer upcard
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    const next = applyAction(
+      state,
+      { type: 'round:betDeadline', seatId: '__server__' },
+      draw,
+    );
+    expect(next.phase).toBe('player_turn');
+    expect(next.players[0].hands[0].cards.length).toBe(2);
+    expect(next.dealer.cards.length).toBe(2);  // upcard + hidden
+  });
+
+  it('sits out seated players who did not bet', () => {
+    let state = newRoom();
+    state = {
+      ...state,
+      players: state.players.map((p, i) =>
+        i === 0
+          ? { ...p, name: 'Alice', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          : i === 1
+          ? { ...p, name: 'Bob', hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          : p,
+      ),
+    };
+    const deck: Card[] = [
+      { suit: '♠', rank: '5' },
+      { suit: '♥', rank: '6' },
+      { suit: '♦', rank: 'K' },
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    const next = applyAction(
+      state,
+      { type: 'round:betDeadline', seatId: '__server__' },
+      draw,
+    );
+    // Alice (bet 100) is acting; Bob (bet 0) is sitting_out
+    expect(next.players[0].status).toBe('acting');
+    expect(next.players[1].status).toBe('sitting_out');
+  });
+
+  it('preserves lastBet on sat-out players', () => {
+    let state = newRoom();
+    state = {
+      ...state,
+      players: state.players.map((p, i) =>
+        i === 0
+          ? { ...p, name: 'Alice', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          : i === 1
+          ? { ...p, name: 'Bob', lastBet: 50, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          : p,
+      ),
+    };
+    const deck: Card[] = [
+      { suit: '♠', rank: '5' },
+      { suit: '♥', rank: '6' },
+      { suit: '♦', rank: 'K' },
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    const next = applyAction(
+      state,
+      { type: 'round:betDeadline', seatId: '__server__' },
+      draw,
+    );
+    expect(next.players[1].lastBet).toBe(50);
+    expect(next.players[1].status).toBe('sitting_out');
+  });
+
+  it('does not affect empty seats', () => {
+    let state = newRoom();
+    state = {
+      ...state,
+      players: state.players.map((p, i) =>
+        i === 0
+          ? { ...p, name: 'Alice', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          : p,
+      ),
+    };
+    const deck: Card[] = [
+      { suit: '♠', rank: '5' },
+      { suit: '♥', rank: '6' },
+      { suit: '♦', rank: 'K' },
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    const next = applyAction(
+      state,
+      { type: 'round:betDeadline', seatId: '__server__' },
+      draw,
+    );
+    // The 3 empty seats remain empty
+    for (let j = 1; j < 5; j++) {
+      expect(next.players[j].status).toBe('empty');
+    }
+  });
+});
