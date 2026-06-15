@@ -196,11 +196,18 @@ describe('gateway integration: 2-player full round', () => {
       const fresh = io(url, { transports: ['websocket'], forceNew: true });
       await new Promise<void>((r) => fresh.on('connect', () => r()));
       const lobby2 = listen<LobbyState>(fresh, 'lobby:state');
+      const gameState2 = listen<{ phase: string }>(fresh, 'game:state');
       const resumed = await new Promise<{ seatId: string }>((resolve) => {
         fresh.emit('room:resume', { roomId, seatToken: created.seatToken }, (resp: any) => resolve(resp));
       });
-      await lobby2;
+      const freshLobby = await lobby2;
+      const freshGame = await gameState2;
+      // The ack's seatId matches the original seat, and the resumed player shows
+      // up in the lobby / game broadcasts — proving the socket-to-seat binding
+      // was actually updated, not just that the server echoed the original id.
       expect(resumed.seatId).toBe(created.seatId);
+      expect(freshLobby.players.map((p) => p.name)).toContain('Alice');
+      expect(freshGame.phase).toBe('lobby');
 
       host.disconnect();
       fresh.disconnect();
