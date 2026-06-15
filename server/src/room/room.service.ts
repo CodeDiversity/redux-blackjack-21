@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Config } from '../config';
 import { createInitialState, GameError, applyAction, type Action } from '../game/state-machine';
 import { generateRoomCode } from './room-code';
@@ -8,22 +9,30 @@ import type { Card, GameState, LobbyState, PlayerSeat } from '../shared/types';
 export class RoomService {
   private rooms = new Map<string, Room>();
 
-  createRoom(hostSocketId: string, hostName: string): { roomId: string; seatId: string; state: GameState } {
+  createRoom(hostSocketId: string, hostName: string): { roomId: string; seatId: string; seatToken: string; state: GameState } {
     const roomId = this.uniqueRoomId();
     const state = createInitialState(roomId, Config.SEAT_COUNT);
-    const seat = this.assignFirstEmptySeat(state, hostSocketId, hostName);
-    const room: Room = { id: roomId, state, seats: new Map([[seat.id, { socketId: hostSocketId, seatId: seat.id, name: hostName }]]) };
+    const seatId = randomUUID();
+    const seatToken = randomUUID();
+    const seat = this.assignSeat(state, seatId, hostSocketId, hostName);
+    const room: Room = {
+      id: roomId,
+      state,
+      seats: new Map([[seatId, { socketId: hostSocketId, seatId, seatToken, name: hostName }]]),
+    };
     this.rooms.set(roomId, room);
-    return { roomId, seatId: seat.id, state };
+    return { roomId, seatId, seatToken, state };
   }
 
-  joinRoom(roomId: string, socketId: string, name: string): { seatId: string; state: GameState } {
+  joinRoom(roomId: string, socketId: string, name: string): { seatId: string; seatToken: string; state: GameState } {
     const room = this.rooms.get(roomId);
     if (!room) throw new GameError('ROOM_NOT_FOUND');
     if (room.seats.size >= Config.SEAT_COUNT) throw new GameError('ROOM_FULL');
-    const seat = this.assignFirstEmptySeat(room.state, socketId, name);
-    room.seats.set(seat.id, { socketId, seatId: seat.id, name });
-    return { seatId: seat.id, state: room.state };
+    const seatId = randomUUID();
+    const seatToken = randomUUID();
+    const seat = this.assignSeat(room.state, seatId, socketId, name);
+    room.seats.set(seatId, { socketId, seatId, seatToken, name });
+    return { seatId, seatToken, state: room.state };
   }
 
   leaveRoom(roomId: string, socketId: string): { state: GameState; destroyed: boolean; hostId?: string } {
@@ -89,11 +98,11 @@ export class RoomService {
     return id;
   }
 
-  private assignFirstEmptySeat(state: GameState, socketId: string, name: string): PlayerSeat {
+  private assignSeat(state: GameState, seatId: string, socketId: string, name: string): PlayerSeat {
     const idx = state.players.findIndex((p) => p.status === 'empty');
     if (idx === -1) throw new GameError('ROOM_FULL');
     const next = [...state.players];
-    next[idx] = { ...next[idx], id: socketId, name, status: 'betting' as const, connectedAt: Date.now() };
+    next[idx] = { ...next[idx], id: seatId, name, status: 'betting' as const, connectedAt: Date.now() };
     state.players = next;
     return next[idx];
   }
@@ -102,5 +111,5 @@ export class RoomService {
 type Room = {
   id: string;
   state: GameState;
-  seats: Map<string, { socketId: string; seatId: string; name: string }>;
+  seats: Map<string, { socketId: string; seatId: string; seatToken: string; name: string }>;
 };
