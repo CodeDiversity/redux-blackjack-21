@@ -280,10 +280,25 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   }
 
   private broadcastAll(roomId: string, state: GameState) {
+    // Drive timers off the new phase FIRST so attachPhaseEndsAt sees the new fireAt.
+    if (state.phase === 'settled') this.scheduleAutoAdvance(roomId, 'settled');
+    else if (state.phase === 'betting') this.scheduleAutoAdvance(roomId, 'betting');
+    else this.cancelAutoAdvance(roomId);
+
     const lobby = this.rooms.getLobbyState(roomId);
     if (lobby) this.server.to(roomId).emit('lobby:state', lobby);
-    this.server.to(roomId).emit('game:state', this.publicState(state));
+    const publicState = this.attachPhaseEndsAt(roomId, state);
+    this.server.to(roomId).emit('game:state', this.publicState(publicState));
     if (state.phase === 'settled' && state.lastResult) this.server.to(roomId).emit('round:result', state.lastResult);
+  }
+
+  private attachPhaseEndsAt(roomId: string, state: GameState): GameState {
+    if (state.phase !== 'settled' && state.phase !== 'betting') {
+      return { ...state, phaseEndsAt: null };
+    }
+    const entry = this.pendingTimers.get(roomId);
+    if (!entry) return { ...state, phaseEndsAt: null };
+    return { ...state, phaseEndsAt: entry.fireAt };
   }
 
   private publicState(state: GameState): GameState {
