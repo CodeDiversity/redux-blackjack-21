@@ -462,3 +462,17 @@ describe('applyAction: round:betDeadline (with bets)', () => {
     }
   });
 });
+
+describe('applyAction: round:betDeadline (no bets, re-loop)', () => {
+  it('stays in betting phase and bumps action count when 0 players have bet', () => {
+    const state = newRoom();  // no bets placed
+    const next = applyAction(
+      state,
+      { type: 'round:betDeadline', seatId: '__server__' },
+      () => { throw new Error('draw should not be called on re-loop'); },
+    );
+    expect(next.phase).toBe('betting');
+    expect(next.activeSeat).toBeNull();
+    expect(next.lastResult).toBeNull();
+  });
+});

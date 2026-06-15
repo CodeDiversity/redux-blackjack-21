@@ -471,6 +471,13 @@ export const machine = setup({
         lastResult: null,
       };
     }),
+    assignBetDeadlineEmpty: assign(({ context }) => {
+      return {
+        __actionCount: context.__actionCount + 1,
+        activeSeat: null,
+        lastResult: null,
+      };
+    }),
   },
 }).createMachine({
   id: 'blackjack',
