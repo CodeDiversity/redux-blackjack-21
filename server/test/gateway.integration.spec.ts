@@ -228,4 +228,69 @@ describe('gateway integration: 2-player full round', () => {
       host.disconnect();
     }, 10_000);
   });
+
+  describe('disconnect grace period', () => {
+    it('keeps the seat in the room after a socket disconnects, so a fresh socket can resume', async () => {
+      const host = io(url, { transports: ['websocket'], forceNew: true });
+      await new Promise<void>((r) => host.on('connect', () => r()));
+
+      const lobby1 = listen<LobbyState>(host, 'lobby:state');
+      const created = await new Promise<{ seatId: string; seatToken: string }>((resolve) => {
+        host.emit('room:create', { name: 'Alice' }, (resp: any) => resolve(resp));
+      });
+      const roomId = (await lobby1).roomId;
+      expect(created.seatToken).toBeTruthy();
+
+      // Simulate a page reload: the original socket drops before a fresh
+      // one can connect. With the grace period in place, the seat entry
+      // must NOT be removed synchronously on disconnect.
+      host.disconnect();
+      // Yield so any synchronous (incorrect) leave handler would have run.
+      await new Promise((r) => setImmediate(r));
+
+      const fresh = io(url, { transports: ['websocket'], forceNew: true });
+      await new Promise<void>((r) => fresh.on('connect', () => r()));
+
+      // The fresh socket should be able to resume the original seat using
+      // the seatToken. If the seat had been removed on disconnect, this
+      // would emit SEAT_GONE instead.
+      const lobby2 = listen<LobbyState>(fresh, 'lobby:state');
+      const resumed = await new Promise<{ seatId: string }>((resolve) => {
+        fresh.emit('room:resume', { roomId, seatToken: created.seatToken }, (resp: any) => resolve(resp));
+      });
+      const freshLobby = await lobby2;
+
+      expect(resumed.seatId).toBe(created.seatId);
+      expect(freshLobby.players.map((p) => p.name)).toContain('Alice');
+
+      fresh.disconnect();
+    }, 10_000);
+
+    it('still emits SEAT_GONE when an unknown token is used during the grace period', async () => {
+      // A wrong token must still fail, even if a (different) seat is currently
+      // in the grace period from a prior disconnect. Defends against
+      // accidentally over-eager cancellation logic.
+      const host = io(url, { transports: ['websocket'], forceNew: true });
+      await new Promise<void>((r) => host.on('connect', () => r()));
+      const lobby1 = listen<LobbyState>(host, 'lobby:state');
+      await new Promise<void>((resolve) => {
+        host.emit('room:create', { name: 'Alice' }, () => resolve());
+      });
+      const roomId = (await lobby1).roomId;
+
+      // Disconnect so a grace timer is now pending for Alice's seat.
+      host.disconnect();
+      await new Promise((r) => setImmediate(r));
+
+      // A brand-new socket tries to resume with a bogus token in the same
+      // room. The seat exists (Alice's), but the token is wrong → SEAT_GONE.
+      const fresh = io(url, { transports: ['websocket'], forceNew: true });
+      await new Promise<void>((r) => fresh.on('connect', () => r()));
+      const err = listen<{ code: string }>(fresh, 'error');
+      fresh.emit('room:resume', { roomId, seatToken: 'bogus-during-grace' });
+      const got = await err;
+      expect(got.code).toBe('SEAT_GONE');
+      fresh.disconnect();
+    }, 10_000);
+  });
 });
