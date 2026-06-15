@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { io, type Socket } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
+import { Config } from '../src/config';
 import type { GameState, LobbyState } from '../src/shared/types';
 
 async function listen<T = any>(socket: Socket, event: string, predicate?: (p: T) => boolean): Promise<T> {
@@ -58,7 +59,8 @@ describe('gateway integration: 2-player full round', () => {
     await Promise.all([betState1, betState2]);
 
     const startedPromise = listen<GameState>(host, 'game:state', (s) => s.phase !== 'lobby' && s.phase !== 'betting');
-    host.emit('round:start');
+    // The deal fires automatically when the 10s bet deadline elapses.
+    await new Promise((r) => setTimeout(r, Config.BET_DEADLINE_MS + 500));
     const started = await startedPromise;
     expect(started.phase).toBe('player_turn');
     expect(started.activeSeat).not.toBeNull();
@@ -83,9 +85,9 @@ describe('gateway integration: 2-player full round', () => {
     expect(settled.lastResult).toBeTruthy();
     expect(settled.lastResult!.payouts.length).toBeGreaterThan(0);
 
-    // Host advances to the next hand.
+    // The next betting phase arrives automatically when the 3s settle pause elapses.
     const betting2Promise = listen<GameState>(host, 'game:state', (s) => s.phase === 'betting' && s.lastResult === null);
-    host.emit('round:advance');
+    await new Promise((r) => setTimeout(r, Config.SETTLE_PAUSE_MS + 500));
     const betting2 = await betting2Promise;
     expect(betting2.phase).toBe('betting');
     expect(betting2.lastResult).toBeNull();
@@ -101,9 +103,9 @@ describe('gateway integration: 2-player full round', () => {
 
     host.disconnect();
     guest.disconnect();
-  }, 15_000);
+  }, 30_000);
 
-  it('rejects round:start when no one has bet and round:ready gates the flow into betting', async () => {
+  it('re-loops the betting phase when 0 players bet by the deadline', async () => {
     const host = io(url, { transports: ['websocket'], forceNew: true });
     await new Promise<void>((r) => host.on('connect', () => r()));
 
@@ -112,71 +114,24 @@ describe('gateway integration: 2-player full round', () => {
       host.emit('room:create', { name: 'Alice' }, () => resolve());
     });
     await lobbyPromise;
-
-    // round:start with no bets → NOT_READY error.
-    const errPromise = listen<{ code: string }>(host, 'error');
-    host.emit('round:start');
-    const err = await errPromise;
-    expect(err.code).toBe('NOT_READY');
 
     // round:ready → phase transitions to 'betting'.
-    const readyPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'betting');
+    const bettingPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'betting');
     host.emit('round:ready');
-    const betting = await readyPromise;
-    expect(betting.phase).toBe('betting');
-    expect(betting.lastResult).toBeNull();
-    expect(betting.activeSeat).toBeNull();
+    const betting1 = await bettingPromise;
+    expect(betting1.phase).toBe('betting');
+    expect(betting1.phaseEndsAt).toBeGreaterThan(Date.now());
+
+    // Wait for the bet deadline; nobody has bet → re-loop.
+    const betting2Promise = listen<GameState>(host, 'game:state',
+      (s) => s.phase === 'betting' && s.phaseEndsAt !== null && s.phaseEndsAt > betting1.phaseEndsAt!);
+    await new Promise((r) => setTimeout(r, Config.BET_DEADLINE_MS + 500));
+    const betting2 = await betting2Promise;
+    expect(betting2.phase).toBe('betting');
+    expect(betting2.phaseEndsAt).toBeGreaterThan(betting1.phaseEndsAt!);
 
     host.disconnect();
-  }, 10_000);
-
-  it('rejects round:advance from a non-host with NOT_HOST', async () => {
-    const host = io(url, { transports: ['websocket'], forceNew: true });
-    const guest = io(url, { transports: ['websocket'], forceNew: true });
-    await Promise.all([
-      new Promise<void>((r) => host.on('connect', () => r())),
-      new Promise<void>((r) => guest.on('connect', () => r())),
-    ]);
-
-    const lobbyPromise = listen<LobbyState>(host, 'lobby:state');
-    await new Promise<void>((resolve) => {
-      host.emit('room:create', { name: 'Alice' }, () => resolve());
-    });
-    const lobby = await lobbyPromise;
-    const roomId = lobby.roomId;
-
-    await new Promise<void>((resolve) => {
-      guest.emit('room:join', { roomId, name: 'Bob' }, () => resolve());
-    });
-
-    // Guest (non-host) emits round:advance → expect NOT_HOST error.
-    const errPromise = listen<{ code: string }>(guest, 'error');
-    guest.emit('round:advance');
-    const err = await errPromise;
-    expect(err.code).toBe('NOT_HOST');
-
-    host.disconnect();
-    guest.disconnect();
-  }, 10_000);
-
-  it('rejects round:advance from the host while not in settled phase', async () => {
-    const host = io(url, { transports: ['websocket'], forceNew: true });
-    await new Promise<void>((r) => host.on('connect', () => r()));
-
-    const lobbyPromise = listen<LobbyState>(host, 'lobby:state');
-    await new Promise<void>((resolve) => {
-      host.emit('room:create', { name: 'Alice' }, () => resolve());
-    });
-    await lobbyPromise;
-
-    // Host is in lobby phase (not settled). Emit round:advance → expect INVALID_PHASE.
-    const errPromise = listen<{ code: string }>(host, 'error');
-    host.emit('round:advance');
-    const err = await errPromise;
-    expect(err.code).toBe('INVALID_PHASE');
-
-    host.disconnect();
-  }, 10_000);
+  }, 15_000);
 
   describe('room:resume', () => {
     it('rebinds a returning client to the same seat using the seatToken', async () => {

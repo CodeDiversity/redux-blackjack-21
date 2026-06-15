@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { io, type Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
+import { Config } from '../../src/config';
 import type { GameState, LobbyState } from '../../src/shared/types';
 
 async function listen<T = any>(socket: Socket, event: string, predicate?: (p: T) => boolean): Promise<T> {
@@ -75,9 +76,9 @@ describe('gateway integration: 5-player full round', () => {
     }
     await Promise.all(betPromises);
 
-    // Host starts the round.
+    // Host starts the round (deal fires automatically when the bet deadline elapses).
     const startedPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'player_turn');
-    host.emit('round:start');
+    await new Promise((r) => setTimeout(r, Config.BET_DEADLINE_MS + 500));
     const started = await startedPromise;
     expect(started.phase).toBe('player_turn');
     expect(started.activeSeat).not.toBeNull();
@@ -129,5 +130,5 @@ describe('gateway integration: 5-player full round', () => {
     for (let i = 0; i < 5; i++) expect(seenActiveSeats.has(i)).toBe(true);
 
     for (const s of players) s.disconnect();
-  }, 30_000);
+  }, 45_000);
 });

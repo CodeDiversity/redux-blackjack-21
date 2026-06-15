@@ -12,6 +12,7 @@ export function prepareEvent(state: GameState, action: Action, draw?: () => Card
     case 'bet:place':
     case 'hand:stand':
     case 'round:ready':
+    case 'round:advance':
       return { ...action };
 
     case 'hand:hit':
