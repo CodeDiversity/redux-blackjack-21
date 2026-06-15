@@ -44,6 +44,20 @@ export class RoomService {
     return { seatId: entry.seatId, state: room.state };
   }
 
+  /**
+   * Look up a seat entry by room + token without mutating it.
+   * Used by the gateway to find the seatId when handling room:resume, so it
+   * can cancel any pending disconnect-grace timer before the resume mutates
+   * the entry's socketId.
+   */
+  findSeatByToken(roomId: string, seatToken: string): { seatId: string } | undefined {
+    const room = this.rooms.get(roomId);
+    if (!room) return undefined;
+    const entry = [...room.seats.values()].find((e) => e.seatToken === seatToken);
+    if (!entry) return undefined;
+    return { seatId: entry.seatId };
+  }
+
   leaveRoom(roomId: string, socketId: string): { state: GameState; destroyed: boolean; hostId?: string } {
     const room = this.rooms.get(roomId);
     if (!room) return { state: createInitialState(roomId, Config.SEAT_COUNT), destroyed: true };
@@ -93,6 +107,19 @@ export class RoomService {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Look up a seat entry in a specific room by its current socket id, without
+   * scanning other rooms. Used by the disconnect handler to discover the
+   * seatId of a socket that already had its room cached in socketToRoom.
+   */
+  findSeatBySocketId(roomId: string, socketId: string): { seatId: string } | undefined {
+    const room = this.rooms.get(roomId);
+    if (!room) return undefined;
+    const entry = [...room.seats.values()].find((e) => e.socketId === socketId);
+    if (!entry) return undefined;
+    return { seatId: entry.seatId };
   }
 
   private pickHost(room: Room): string {

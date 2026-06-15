@@ -49,6 +49,7 @@
     "collectCoverageFrom": [
       "src/**/*.(t|j)s"
     ],
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "forceExit": true
   }
 }
