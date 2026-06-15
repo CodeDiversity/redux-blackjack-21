@@ -4,14 +4,15 @@ import { selectLobbySeats } from '../selectors/lobby';
 
 const Row = styled.div`
   display: flex;
-  gap: ${({ theme }) => theme.spacing.xl};
+  gap: ${({ theme }) => theme.spacing.md};
+  flex-wrap: wrap;
   justify-content: center;
   align-items: center;
 `;
 
 const SeatCard = styled.div<{ $seated: boolean }>`
-  width: 140px;
-  height: 170px;
+  width: 110px;
+  height: 140px;
   background: ${({ theme }) => theme.colors.entranceSurface};
   border-radius: ${({ theme }) => theme.radii.seat};
   display: flex;
@@ -33,14 +34,14 @@ const SeatCard = styled.div<{ $seated: boolean }>`
 `;
 
 const Avatar = styled.div<{ $seated: boolean }>`
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  font-size: 20px;
+  font-size: 16px;
   font-family: ${({ theme }) => theme.typography.fontFamily};
   ${({ $seated, theme }) =>
     $seated
