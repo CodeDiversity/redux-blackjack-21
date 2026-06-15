@@ -35,7 +35,7 @@ describe('selectLobbySeats', () => {
     const players = [seat('s0', 'betting'), seat('s1', 'empty')];
     const root = stateWith({
       game: {
-        roomId: 'R', phase: 'lobby', shoeSize: 200, cutCardIndex: 50,
+        roomId: 'R', phase: 'lobby', phaseEndsAt: null, shoeSize: 200, cutCardIndex: 50,
         players, dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
         activeSeat: null, roundNumber: 0, lastResult: null,
       },

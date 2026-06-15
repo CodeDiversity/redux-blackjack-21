@@ -19,7 +19,7 @@ function seat(overrides: Partial<PlayerSeat> = {}): PlayerSeat {
 
 function stateWith(seatOrNull: PlayerSeat | null): RootState {
   const game: GameState | null = seatOrNull === null ? null : {
-    roomId: 'R', phase: 'betting', shoeSize: 200, cutCardIndex: 50,
+    roomId: 'R', phase: 'betting', phaseEndsAt: null, shoeSize: 200, cutCardIndex: 50,
     players: [seatOrNull], dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
     activeSeat: null, roundNumber: 1, lastResult: null,
   };

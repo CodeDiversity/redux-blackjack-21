@@ -32,7 +32,7 @@ function makeSeats(): PlayerSeat[] {
 
 function makeStore(seats: PlayerSeat[], selfSeatId: string | null = 's0') {
   const state: GameState = {
-    roomId: 'R', phase: 'betting', shoeSize: 0, cutCardIndex: 0,
+    roomId: 'R', phase: 'betting', phaseEndsAt: null, shoeSize: 0, cutCardIndex: 0,
     players: seats,
     dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
     activeSeat: null, roundNumber: 0, lastResult: null,

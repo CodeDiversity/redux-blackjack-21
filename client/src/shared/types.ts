@@ -22,7 +22,8 @@ export type RoundResult = {
   payouts: { seatId: string; delta: number; reason: 'win' | 'lose' | 'push' | 'blackjack' }[];
 };
 export type GameState = {
-  roomId: string; phase: Phase; shoeSize: number; cutCardIndex: number;
+  roomId: string; phase: Phase; phaseEndsAt: number | null;
+  shoeSize: number; cutCardIndex: number;
   players: PlayerSeat[]; dealer: Hand; activeSeat: number | null;
   roundNumber: number; lastResult: RoundResult | null;
 };

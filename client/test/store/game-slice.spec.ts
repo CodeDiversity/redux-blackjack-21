@@ -3,7 +3,7 @@ import { gameReducer, gameStateReceived, roundResultReceived, gameCleared } from
 import type { GameState, RoundResult } from '../../src/shared/types';
 
 const baseState: GameState = {
-  roomId: 'R1', phase: 'betting', shoeSize: 200, cutCardIndex: 50,
+  roomId: 'R1', phase: 'betting', phaseEndsAt: null, shoeSize: 200, cutCardIndex: 50,
   players: [], dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
   activeSeat: null, roundNumber: 1, lastResult: null,
 };

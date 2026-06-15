@@ -19,6 +19,7 @@ function makeStore(opts: {
   const state: GameState = {
     roomId: 'R',
     phase: opts.phase,
+    phaseEndsAt: null,
     shoeSize: 200,
     cutCardIndex: 50,
     players: [

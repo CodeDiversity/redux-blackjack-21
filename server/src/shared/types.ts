@@ -51,6 +51,7 @@ export type RoundResult = {
 export type GameState = {
   roomId: string;
   phase: Phase;
+  phaseEndsAt: number | null;
   shoeSize: number;
   cutCardIndex: number;
   players: PlayerSeat[];

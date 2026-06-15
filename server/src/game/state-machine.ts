@@ -224,6 +224,7 @@ function makeGuardFn(g: GuardDef) {
     const fakeState: GameState = {
       roomId: '',
       phase: 'lobby',  // unused by predicates when invoked inside the right XState state
+      phaseEndsAt: null,
       shoeSize: context.shoeSize,
       cutCardIndex: context.cutCardIndex,
       players: context.players,
@@ -494,6 +495,7 @@ export function createInitialState(roomId: string, seatCount: number, _roundNumb
   return {
     roomId,
     phase: 'lobby',
+    phaseEndsAt: null,
     shoeSize: 0,
     cutCardIndex: 0,
     players: seats,
@@ -541,6 +543,7 @@ export function applyAction(state: GameState, action: Action, draw?: () => Card)
     const intermediateState: GameState = {
       roomId: state.roomId,
       phase: next.value as GameState['phase'],
+      phaseEndsAt: null,
       shoeSize: next.context.shoeSize,
       cutCardIndex: next.context.cutCardIndex,
       players: next.context.players,
@@ -555,6 +558,7 @@ export function applyAction(state: GameState, action: Action, draw?: () => Card)
     return {
       roomId: state.roomId,
       phase: final.value as GameState['phase'],
+      phaseEndsAt: null,
       shoeSize: final.context.shoeSize,
       cutCardIndex: final.context.cutCardIndex,
       players: final.context.players,
@@ -568,6 +572,7 @@ export function applyAction(state: GameState, action: Action, draw?: () => Card)
   return {
     roomId: state.roomId,
     phase: next.value as GameState['phase'],
+    phaseEndsAt: null,
     shoeSize: next.context.shoeSize,
     cutCardIndex: next.context.cutCardIndex,
     players: next.context.players,
