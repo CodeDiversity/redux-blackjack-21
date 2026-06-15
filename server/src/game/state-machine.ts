@@ -1,7 +1,7 @@
 import { setup, createActor, assign, and } from 'xstate';
 import { Config } from '../config';
 import type { Card, CardSlot, GameState, Hand, PlayerSeat, RoundResult } from '../shared/types';
-import { isBusted } from './hand';
+import { isBusted, handTotal } from './hand';
 import { computePayout } from './payout';
 import { prepareEvent, computeDealerEvent } from './draw-bridge';
 
@@ -292,11 +292,7 @@ export const machine = setup({
       const hand = player.hands[event.handIndex];
       const newCards = [...hand.cards, event.card];
       const busted = isBusted(newCards);
-      const total21 = (() => {
-        const real = newCards.filter((c): c is Card => !('hidden' in c));
-        return real.reduce((sum, c) => sum + (c.rank === 'A' ? 11 : ['J','Q','K'].includes(c.rank) ? 10 : Number(c.rank)), 0) === 21;
-      })();
-      const handComplete = busted || total21;
+      const handComplete = busted || handTotal(newCards) === 21;
       const newHand = { ...hand, cards: newCards, busted };
       const newHands = player.hands.map((h, j) => j === event.handIndex ? newHand : h);
       const nextHandIndex = event.handIndex + 1;

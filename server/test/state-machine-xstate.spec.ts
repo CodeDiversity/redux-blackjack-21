@@ -336,4 +336,55 @@ describe('activeHandIndex walks all hands in order', () => {
     expect(next.players[0].hands[1].busted).toBe(true);
     expect(next.players[0].activeHandIndex).toBe(2);
   });
+
+  it('hand:hit to a non-completing total does not bump activeHandIndex', () => {
+    // 5+5=10, hit to 7=17. Hand should NOT be bumped, activeSeat should stay.
+    const hand: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '5' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    const players = createInitialState('R', Config.SEAT_COUNT).players.map((p, i) =>
+      i === 0
+        ? {
+            ...createInitialState('R', Config.SEAT_COUNT).players[0],
+            id: 's0', name: 'Alice', status: 'acting' as const, activeHandIndex: 0,
+            hands: [hand],
+          }
+        : p,
+    );
+    const state: GameState = {
+      ...createInitialState('R', Config.SEAT_COUNT), phase: 'player_turn', activeSeat: 0, players,
+    };
+    const next = applyAction(state, { type: 'hand:hit', seatId: 's0', handIndex: 0 }, () => ({ suit: '♠', rank: '7' }));
+    expect(next.players[0].hands[0].cards.length).toBe(3);
+    expect(next.players[0].hands[0].busted).toBe(false);
+    expect(next.players[0].activeHandIndex).toBe(0);
+    expect(next.activeSeat).toBe(0);
+  });
+
+  it('hand:bust as the last acting action transitions to dealer_turn', () => {
+    // Only seat 0 is acting; it busts; phase should be dealer_turn.
+    const hand: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♠', rank: 'K' }, { suit: '♥', rank: '6' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    const players = createInitialState('R', Config.SEAT_COUNT).players.map((p, i) =>
+      i === 0
+        ? {
+            ...createInitialState('R', Config.SEAT_COUNT).players[0],
+            id: 's0', name: 'Alice', status: 'acting' as const, activeHandIndex: 0,
+            hands: [hand],
+          }
+        : p,
+    );
+    const state: GameState = {
+      ...createInitialState('R', Config.SEAT_COUNT), phase: 'player_turn', activeSeat: 0, players,
+    };
+    const next = applyAction(state, { type: 'hand:hit', seatId: 's0', handIndex: 0 }, () => ({ suit: '♠', rank: 'K' }));
+    expect(next.players[0].hands[0].busted).toBe(true);
+    // Phase may be 'dealer_turn' (no draw provided) or 'settled' (draw triggered dealer event).
+    // What matters is that the player_turn phase has ended.
+    expect(next.phase).not.toBe('player_turn');
+    expect(next.activeSeat).toBeNull();
+  });
 });
