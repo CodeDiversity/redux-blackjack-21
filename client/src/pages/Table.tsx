@@ -24,7 +24,10 @@ export function Table() {
   const navigate = useNavigate();
   const phase = useSelector((s: RootState) => s.game.state?.phase ?? 'lobby');
   const selfSeatId = useSelector((s: RootState) => s.connection.selfSeatId);
-  const didEmitForThisMountRef = useRef(false);
+  // Tracks the last code for which we emitted room:resume, so navigating to
+  // a different room re-arms the resume while React StrictMode's intentional
+  // double-effect-invocation (which doesn't change `code`) does not.
+  const emittedForCodeRef = useRef<string | null>(null);
 
   // Effect 1: resume-or-prompt gating on mount and on `code` change.
   useEffect(() => {
@@ -32,15 +35,14 @@ export function Table() {
     const socket = getSocket();
 
     const tryResume = () => {
-      if (didEmitForThisMountRef.current) return;
-      if (!token) return; // No token: render <NamePrompt> and don't auto-join.
-      didEmitForThisMountRef.current = true;
+      if (!code || !token) return;
+      if (emittedForCodeRef.current === code) return;
+      emittedForCodeRef.current = code;
       socket.emit('room:resume', { roomId: code, seatToken: token }, () => {});
     };
 
-    // Try once on mount; the ref guard means this is a no-op if we already
-    // emitted (e.g. on a subsequent reconnect/connect event after mount, or
-    // during React StrictMode's intentional double-invocation of effects).
+    // Try once on mount; the ref guard makes this a no-op on subsequent
+    // connect/reconnect events for the same code, but a code change re-arms.
     tryResume();
     socket.on('connect', tryResume);
     socket.on('reconnect', tryResume);
