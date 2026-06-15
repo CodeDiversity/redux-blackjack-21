@@ -19,15 +19,30 @@ const emptyContext = () => ({
 
 describe('XState machine: state graph shape', () => {
   it('has the 5 expected states', () => {
-    // We discover states by walking transitions from a fresh actor.
-    const actor = createActor(machine);
+    // We discover states by walking transitions from a hydrated actor.
+    // Start in the betting phase with one player that has bet, so the
+    // hasAtLeastOneBet guard on round:betDeadline passes and we transition
+    // to player_turn.
+    const players = [{
+      id: 'p0',
+      name: 'Alice',
+      bankroll: 1000,
+      hands: [{ cards: [], bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false }],
+      status: 'betting' as const,
+      connectedAt: 0,
+      lastBet: 0,
+      activeHandIndex: 0,
+    }];
+    const actor = createActor(machine, {
+      snapshot: machine.resolveState({ value: 'lobby', context: { ...emptyContext(), players } }),
+    });
     actor.start();
     const states = new Set<string>();
     states.add(actor.getSnapshot().value as string);
 
     actor.send({ type: 'round:ready', seatId: 'x' });
     states.add(actor.getSnapshot().value as string);
-    actor.send({ type: 'round:start', seatId: 'x', dealtCards: [], dealerUpcard: { suit: '♠', rank: 'A' } });
+    actor.send({ type: 'round:betDeadline', seatId: '__server__', dealtCards: [{ playerIndex: 0, cards: [{ suit: '♠', rank: 'A' }, { suit: '♥', rank: 'K' }] }], dealerUpcard: { suit: '♠', rank: 'A' } });
     states.add(actor.getSnapshot().value as string);
 
     expect([...states].sort()).toEqual(['betting', 'lobby', 'player_turn']);
@@ -40,13 +55,13 @@ describe('XState machine: state graph shape', () => {
     expect(actor.getSnapshot().value).toBe('betting');
   });
 
-  it('settled transitions to betting on round:advance', () => {
+  it('settled transitions to betting on round:ready', () => {
     // Start a fresh actor and hydrate into the settled state.
     const actor = createActor(machine, {
       snapshot: machine.resolveState({ value: 'settled', context: emptyContext() }),
     });
     actor.start();
-    actor.send({ type: 'round:advance', seatId: 'x' });
+    actor.send({ type: 'round:ready', seatId: 'x' });
     expect(actor.getSnapshot().value).toBe('betting');
   });
 
@@ -209,19 +224,11 @@ describe('validation guards', () => {
     expect(() => applyAction(state, { type: 'hand:split', seatId: state.players[0].id, handIndex: 0 }, draw)).toThrow('CANNOT_SPLIT');
   });
 
-  it('allPlayersReady throws NOT_READY when a seated player has no bet', () => {
-    let state: GameState = { ...createInitialState('R', Config.SEAT_COUNT, 0), phase: 'betting' };
-    state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, name: 'Alice', status: 'betting' as const, hands: [{ ...p.hands[0], bet: 50 }] } : { ...p, name: 'Bob', status: 'betting' as const, hands: [{ ...p.hands[0], bet: 0 }] }) };
-    const draw = makeDraw([
-      { suit: '♠', rank: '5' }, { suit: '♥', rank: '6' },
-      { suit: '♦', rank: '7' }, { suit: '♣', rank: '8' },
-    ]);
-    expect(() => applyAction(state, { type: 'round:start', seatId: state.players[0].id }, draw)).toThrow('NOT_READY');
-  });
-
   it('isSettled throws INVALID_PHASE when called from betting', () => {
-    const state = createInitialState('R', Config.SEAT_COUNT, 0);
-    expect(() => applyAction(state, { type: 'round:advance', seatId: state.players[0].id })).toThrow('INVALID_PHASE');
+    const state: GameState = { ...createInitialState('R', Config.SEAT_COUNT, 0), phase: 'betting' };
+    // round:ready is the only event that would target `settled`. Sending it
+    // from betting must throw INVALID_PHASE.
+    expect(() => applyAction(state, { type: 'round:ready', seatId: state.players[0].id })).toThrow('INVALID_PHASE');
   });
 });
 

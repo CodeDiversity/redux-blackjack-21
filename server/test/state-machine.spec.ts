@@ -147,35 +147,6 @@ describe('applyAction: round:ready', () => {
   });
 });
 
-describe('applyAction: round:start', () => {
-  const deck: Card[] = [
-    { suit: '♠', rank: '5' }, { suit: '♥', rank: '6' },
-    { suit: '♦', rank: '7' }, { suit: '♣', rank: '8' },
-  ];
-  let i = 0;
-  const draw = () => deck[i++];
-
-  it('rejects NOT_READY when a seated player has bet === 0', () => {
-    const state: GameState = { ...createInitialState('ROOM1', 2, 0), phase: 'betting' };
-    // Seat 0 is empty; only an actually seated seat without a bet would trigger this.
-    state.players[0] = { ...state.players[0], name: 'Alice', status: 'betting', hands: [{ ...state.players[0].hands[0], bet: 50 }] };
-    state.players[1] = { ...state.players[1], name: 'Bob', status: 'betting', hands: [{ ...state.players[1].hands[0], bet: 0 }] };
-    expect(() => applyAction(state, { type: 'round:start', seatId: state.players[0].id }, draw)).toThrow('NOT_READY');
-  });
-
-  it('deals to all seated players when every seat has a bet', () => {
-    const state: GameState = { ...createInitialState('ROOM1', 2, 0), phase: 'betting' };
-    state.players[0] = { ...state.players[0], name: 'Alice', status: 'betting', hands: [{ ...state.players[0].hands[0], bet: 50 }] };
-    state.players[1] = { ...state.players[1], name: 'Bob', status: 'betting', hands: [{ ...state.players[1].hands[0], bet: 50 }] };
-    i = 0; // reset deck cursor
-    const next = applyAction(state, { type: 'round:start', seatId: state.players[0].id }, draw);
-    expect(next.phase).toBe('player_turn');
-    expect(next.activeSeat).toBe(0);
-    expect(next.players[0].hands[0].cards.length).toBe(2);
-    expect(next.players[1].hands[0].cards.length).toBe(2);
-  });
-});
-
 describe('settle: lastBet population', () => {
   it('records the bet of every resolved hand into the seat lastBet', () => {
     let state = newRoom();
@@ -203,96 +174,6 @@ describe('settle: lastBet population', () => {
     expect(next.phase).toBe('settled');
     expect(next.players[0].lastBet).toBe(75);
     expect(next.players[1].lastBet).toBe(200);
-  });
-});
-
-describe('applyAction: round:advance', () => {
-  function makeSettledState(): GameState {
-    return {
-      ...createInitialState('ROOM1', 2, 1),
-      phase: 'settled',
-      dealer: { cards: [{ suit: '♠', rank: 'K' }, { suit: '♥', rank: '5' }], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
-      lastResult: { payouts: [{ seatId: 'x', delta: 50, reason: 'win' }] },
-      activeSeat: null,
-      players: [
-        { id: 's0', name: 'Alice', bankroll: 1050, hands: [{ cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }], bet: 0, stood: true, busted: false, isBlackjack: false, doubled: false }], status: 'stood', connectedAt: 0, lastBet: 50, activeHandIndex: 0 },
-        { id: 's1', name: 'Bob', bankroll: 950, hands: [{ cards: [{ suit: '♠', rank: 'K' }, { suit: '♥', rank: '9' }], bet: 0, stood: true, busted: false, isBlackjack: false, doubled: false }], status: 'stood', connectedAt: 0, lastBet: 100, activeHandIndex: 0 },
-        { id: 's2', name: 'Carol', bankroll: 0, hands: [{ cards: [], bet: 0, stood: false, busted: true, isBlackjack: false, doubled: false }], status: 'busted', connectedAt: 0, lastBet: 200, activeHandIndex: 0 },
-        { id: 's3', name: 'Dan', bankroll: 0, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'sitting_out', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
-        { id: 's4', name: '', bankroll: 1000, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'empty', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
-      ],
-    } as GameState;
-  }
-
-  it('transitions settled → betting and clears lastResult and activeSeat', () => {
-    const state = makeSettledState();
-    const next = applyAction(state, { type: 'round:advance', seatId: state.players[0].id });
-    expect(next.phase).toBe('betting');
-    expect(next.lastResult).toBeNull();
-    expect(next.activeSeat).toBeNull();
-  });
-
-  it('clears the dealer hand', () => {
-    const state = makeSettledState();
-    const next = applyAction(state, { type: 'round:advance', seatId: state.players[0].id });
-    expect(next.dealer.cards).toEqual([]);
-    expect(next.dealer.bet).toBe(0);
-    expect(next.dealer.stood).toBe(false);
-    expect(next.dealer.busted).toBe(false);
-  });
-
-  it('resets every non-sitting-out, non-empty player to a single empty hand', () => {
-    const state = makeSettledState();
-    const next = applyAction(state, { type: 'round:advance', seatId: state.players[0].id });
-    expect(next.players[0].hands.length).toBe(1);
-    expect(next.players[0].hands[0].cards).toEqual([]);
-    expect(next.players[0].hands[0].bet).toBe(0);
-    expect(next.players[1].hands.length).toBe(1);
-    expect(next.players[1].hands[0].cards).toEqual([]);
-  });
-
-  it('preserves sitting_out and empty seats', () => {
-    const state = makeSettledState();
-    const next = applyAction(state, { type: 'round:advance', seatId: state.players[0].id });
-    expect(next.players[3].status).toBe('sitting_out');
-    expect(next.players[4].status).toBe('empty');
-  });
-
-  it('auto-promotes bankroll === 0 players to sitting_out', () => {
-    const state = makeSettledState();
-    const next = applyAction(state, { type: 'round:advance', seatId: state.players[0].id });
-    // seat 2 (Carol) was 'busted' with bankroll 0 → must become 'sitting_out'
-    expect(next.players[2].status).toBe('sitting_out');
-  });
-
-  it('sets non-sitting-out, non-empty, non-broke players to betting', () => {
-    const state = makeSettledState();
-    const next = applyAction(state, { type: 'round:advance', seatId: state.players[0].id });
-    expect(next.players[0].status).toBe('betting');
-    expect(next.players[1].status).toBe('betting');
-  });
-
-  it('leaves lastBet untouched on every seat', () => {
-    const state = makeSettledState();
-    const next = applyAction(state, { type: 'round:advance', seatId: state.players[0].id });
-    expect(next.players[0].lastBet).toBe(50);
-    expect(next.players[1].lastBet).toBe(100);
-    expect(next.players[2].lastBet).toBe(200);
-    expect(next.players[3].lastBet).toBe(0);
-    expect(next.players[4].lastBet).toBe(0);
-  });
-
-  it('leaves shoeSize, cutCardIndex, and roundNumber unchanged', () => {
-    const state: GameState = { ...makeSettledState(), shoeSize: 187, cutCardIndex: 50, roundNumber: 7 };
-    const next = applyAction(state, { type: 'round:advance', seatId: state.players[0].id });
-    expect(next.shoeSize).toBe(187);
-    expect(next.cutCardIndex).toBe(50);
-    expect(next.roundNumber).toBe(7);
-  });
-
-  it('throws INVALID_PHASE if not currently in settled', () => {
-    const state: GameState = { ...createInitialState('ROOM1', 2, 0), phase: 'betting' };
-    expect(() => applyAction(state, { type: 'round:advance', seatId: state.players[0].id })).toThrow('INVALID_PHASE');
   });
 });
 

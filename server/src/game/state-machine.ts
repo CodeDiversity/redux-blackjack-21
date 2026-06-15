@@ -85,7 +85,7 @@ export const guards: GuardDef[] = [
   // Turn guards
   { name: 'isActiveSeat', errorCode: 'NOT_YOUR_TURN',
     predicate: (s, e) => {
-      if (e.type === 'bet:place' || e.type === 'round:ready' || e.type === 'round:start' || e.type === 'round:advance') return true;
+      if (e.type === 'bet:place' || e.type === 'round:ready' || e.type === 'round:betDeadline') return true;
       const idx = s.players.findIndex((p) => p.id === e.seatId);
       return idx !== -1 && idx === s.activeSeat;
     }},
@@ -150,8 +150,6 @@ export const guards: GuardDef[] = [
     }},
 
   // Round guards
-  { name: 'allPlayersReady', errorCode: 'NOT_READY',
-    predicate: (s) => !s.players.some((p) => p.status !== 'empty' && p.hands[0]?.bet === 0) },
   { name: 'hasAtLeastOneBet', errorCode: 'NO_BETS',
     predicate: (s) => s.players.some((p) =>
       p.status !== 'empty' && p.status !== 'sitting_out' && p.hands[0]?.bet > 0) },
@@ -259,7 +257,6 @@ export const machine = setup({
     hasSufficientFundsForDouble: makeGuardFn(guards.find((g) => g.name === 'hasSufficientFundsForDouble')!),
     hasSufficientFundsForSplit: makeGuardFn(guards.find((g) => g.name === 'hasSufficientFundsForSplit')!),
     noAcesRuleForSplit: makeGuardFn(guards.find((g) => g.name === 'noAcesRuleForSplit')!),
-    allPlayersReady: makeGuardFn(guards.find((g) => g.name === 'allPlayersReady')!),
     hasAtLeastOneBet: makeGuardFn(guards.find((g) => g.name === 'hasAtLeastOneBet')!),
     allHandsActed: ({ context, event }: { context: GameContext; event: GameEvent }) => {
       // Only fire the auto-transition after a hand:* event that completed a hand.
@@ -271,28 +268,6 @@ export const machine = setup({
     },
   },
   actions: {
-    assignDeal: assign(({ context, event }) => {
-      if (event.type !== 'round:start') return {};
-      const dealtPlayers = context.players.map((p, i) => {
-        const deal = event.dealtCards.find((d) => d.playerIndex === i);
-        if (!deal) return p;
-        return {
-          ...p,
-          hands: [{ ...p.hands[0], cards: [...deal.cards] }],
-          status: 'acting' as const,
-        };
-      });
-      const actingIndex = dealtPlayers.findIndex((p) => p.status === 'acting');
-      const hiddenCard: CardSlot = { hidden: true };
-      return {
-        __actionCount: context.__actionCount + 1,
-        players: dealtPlayers,
-        dealer: { ...context.dealer, cards: [event.dealerUpcard, hiddenCard] },
-        activeSeat: actingIndex === -1 ? null : actingIndex,
-        roundNumber: context.roundNumber + 1,
-        lastResult: null,
-      };
-    }),
     assignBetDeadline: assign(({ context, event }) => {
       if (event.type !== 'round:betDeadline') return {};
       const dealtPlayers = context.players.map((p, i) => {
@@ -412,20 +387,6 @@ export const machine = setup({
         ),
       };
     }),
-    assignAdvance: assign(({ context }) => {
-      const emptyHand: Hand = { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false };
-      return {
-        __actionCount: context.__actionCount + 1,
-        dealer: { ...emptyHand },
-        players: context.players.map((p) => {
-          if (p.status === 'empty' || p.status === 'sitting_out') return p;
-          if (p.bankroll === 0) return { ...p, hands: [emptyHand], status: 'sitting_out' as const };
-          return { ...p, hands: [emptyHand], status: 'betting' as const };
-        }),
-        activeSeat: null,
-        lastResult: null,
-      };
-    }),
     assignDealerHand: assign(({ context, event }) => {
       if (event.type !== 'round:dealerPlay') return {};
       const hiddenCount = context.dealer.cards.filter((c) => 'hidden' in c).length;
@@ -507,7 +468,6 @@ export const machine = setup({
     settled: {
       on: {
         'round:ready': { target: 'betting', actions: 'assignReady' },
-        'round:advance': { target: 'betting', actions: 'assignAdvance' },
       },
       entry: 'assignSettle',
     },

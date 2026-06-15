@@ -70,7 +70,7 @@ describe('drawBridge.prepareEvent', () => {
     });
   });
 
-  it('attaches dealtCards and dealerUpcard to round:start', () => {
+  it('attaches dealtCards and dealerUpcard to round:betDeadline', () => {
     const state: GameState = {
       ...baseState(),
       phase: 'betting',
@@ -80,10 +80,10 @@ describe('drawBridge.prepareEvent', () => {
       { suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }, // seat 0 hand
       { suit: '♣', rank: 'K' },                            // dealer upcard
     ]);
-    const ev = prepareEvent(state, { type: 'round:start', seatId: state.players[0].id }, draw);
+    const ev = prepareEvent(state, { type: 'round:betDeadline', seatId: '__server__' }, draw);
     expect(ev).toEqual({
-      type: 'round:start',
-      seatId: state.players[0].id,
+      type: 'round:betDeadline',
+      seatId: '__server__',
       dealtCards: [{ playerIndex: 0, cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }] }],
       dealerUpcard: { suit: '♣', rank: 'K' },
     });
