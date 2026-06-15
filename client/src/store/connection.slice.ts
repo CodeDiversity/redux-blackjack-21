@@ -6,6 +6,7 @@ type ConnectionState = {
   status: ConnectionStatus;
   socketId: string | null;
   selfSeatId: string | null;
+  selfSeatToken: string | null;
   lastError: { code: string; message: string } | null;
 };
 
@@ -13,6 +14,7 @@ const initial: ConnectionState = {
   status: 'idle',
   socketId: null,
   selfSeatId: null,
+  selfSeatToken: null,
   lastError: null,
 };
 
@@ -27,7 +29,14 @@ const slice = createSlice({
     },
     disconnected(state) { state.status = 'disconnected'; },
     reconnecting(state) { state.status = 'reconnecting'; },
-    selfSeatAssigned(state, action: PayloadAction<string>) { state.selfSeatId = action.payload; },
+    selfSeatAssigned(state, action: PayloadAction<{ seatId: string; seatToken: string }>) {
+      state.selfSeatId = action.payload.seatId;
+      state.selfSeatToken = action.payload.seatToken;
+    },
+    selfSeatCleared(state) {
+      state.selfSeatId = null;
+      state.selfSeatToken = null;
+    },
     errorReceived(state, action: PayloadAction<{ code: string; message: string }>) {
       state.lastError = action.payload;
     },
@@ -37,7 +46,7 @@ const slice = createSlice({
 
 export const {
   connecting, connectionEstablished, disconnected, reconnecting,
-  selfSeatAssigned, errorReceived, errorCleared,
+  selfSeatAssigned, selfSeatCleared, errorReceived, errorCleared,
 } = slice.actions;
 export const connectionReducer = slice.reducer;
 export type { ConnectionState };

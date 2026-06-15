@@ -1,12 +1,16 @@
-import { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useEffect, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import styled from 'styled-components';
 import { getSocket } from '../socket/client';
+import { clearStoredSeatToken, getStoredSeatToken } from '../lib/seat-token';
+import { NamePrompt } from '../components/NamePrompt';
 import { Lobby } from '../components/Lobby';
 import { TableView } from '../components/TableView';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { ErrorToast } from '../components/ErrorToast';
+import { errorReceived, selfSeatCleared } from '../store/connection.slice';
+import { toastShown } from '../store/ui.slice';
 import type { RootState } from '../store';
 
 const Page = styled.div`
@@ -16,22 +20,67 @@ const Page = styled.div`
 
 export function Table() {
   const { code } = useParams<{ code: string }>();
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
   const phase = useSelector((s: RootState) => s.game.state?.phase ?? 'lobby');
+  const selfSeatId = useSelector((s: RootState) => s.connection.selfSeatId);
+  // Tracks the last code for which we emitted room:resume, so navigating to
+  // a different room re-arms the resume while React StrictMode's intentional
+  // double-effect-invocation (which doesn't change `code`) does not.
+  const emittedForCodeRef = useRef<string | null>(null);
 
+  // Effect 1: resume-or-prompt gating on mount and on `code` change.
   useEffect(() => {
-    // If the user lands here directly (deep link) and isn't seated, rejoin.
+    const token = code ? getStoredSeatToken(code) : null;
     const socket = getSocket();
-    const onConnect = () => {
-      const seated = (socket as any).socket?.recovered;
-      if (!seated) {
-        const name = prompt('Your name?') ?? 'Guest';
-        socket.emit('room:join', { roomId: code, name }, () => {});
-      }
+
+    const tryResume = () => {
+      if (!code || !token) return;
+      if (emittedForCodeRef.current === code) return;
+      emittedForCodeRef.current = code;
+      socket.emit('room:resume', { roomId: code, seatToken: token }, () => {});
     };
-    socket.on('connect', onConnect);
-    return () => { socket.off('connect', onConnect); };
+
+    // Try once on mount; the ref guard makes this a no-op on subsequent
+    // connect/reconnect events for the same code, but a code change re-arms.
+    tryResume();
+    socket.on('connect', tryResume);
+    socket.on('reconnect', tryResume);
+
+    return () => {
+      socket.off('connect', tryResume);
+      socket.off('reconnect', tryResume);
+    };
   }, [code]);
 
-  if (phase === 'lobby') return <Page><ConnectionStatus /><Lobby /></Page>;
+  // Effect 2: react to SEAT_GONE and other server errors.
+  useEffect(() => {
+    const socket = getSocket();
+    const onError = (payload: { code: string; message: string }) => {
+      dispatch(errorReceived(payload));
+      dispatch(toastShown(payload));
+      if (payload.code === 'SEAT_GONE' && code) {
+        clearStoredSeatToken(code);
+        dispatch(selfSeatCleared());
+        navigate('/');
+      }
+    };
+    socket.on('error', onError);
+    return () => { socket.off('error', onError); };
+  }, [code, dispatch, navigate]);
+
+  // First-time deep-link visitor: show inline name form.
+  if (code && selfSeatId === null && getStoredSeatToken(code) === null) {
+    return (
+      <Page>
+        <ConnectionStatus />
+        <NamePrompt roomCode={code} />
+      </Page>
+    );
+  }
+
+  if (phase === 'lobby') {
+    return <Page><ConnectionStatus /><Lobby /></Page>;
+  }
   return <Page><ConnectionStatus /><TableView /><ErrorToast /></Page>;
 }

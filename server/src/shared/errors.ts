@@ -12,6 +12,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   NAME_REQUIRED: 'Please enter a name.',
   NOT_READY: 'All seated players must place a bet first.',
   NOT_HOST: 'Only the host can start the next hand.',
+  SEAT_GONE: 'Seat no longer available.',
 };
 
 export function makeError(code: ErrorCode): { code: ErrorCode; message: string } {

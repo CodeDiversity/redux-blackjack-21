@@ -9,6 +9,6 @@ export function connect(): Socket {
 }
 
 export function getSocket(): Socket {
-  if (!socket) throw new Error('socket not initialized; call connect() first');
+  if (!socket) return connect();
   return socket;
 }
