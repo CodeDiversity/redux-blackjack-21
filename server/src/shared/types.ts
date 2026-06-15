@@ -33,6 +33,7 @@ export type PlayerSeat = {
   status: SeatStatus;
   connectedAt: number;
   lastBet: number;
+  activeHandIndex: number;  // 0-based index into hands[] when the seat is the active seat; ignored otherwise
 };
 
 export type Phase =

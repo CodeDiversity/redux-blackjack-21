@@ -12,6 +12,7 @@ function seat(overrides: Partial<PlayerSeat> = {}): PlayerSeat {
     status: 'betting',
     connectedAt: 0,
     lastBet: 0,
+    activeHandIndex: 0,
     ...overrides,
   };
 }

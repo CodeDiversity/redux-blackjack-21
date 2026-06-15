@@ -20,6 +20,7 @@ function state_with_one_seated_player(): GameState['players'] {
       status: 'betting',
       connectedAt: 0,
       lastBet: 0,
+      activeHandIndex: 0,
     },
     {
       id: 'p1',
@@ -29,6 +30,7 @@ function state_with_one_seated_player(): GameState['players'] {
       status: 'empty',
       connectedAt: 0,
       lastBet: 0,
+      activeHandIndex: 0,
     },
   ] as GameState['players'];
 }

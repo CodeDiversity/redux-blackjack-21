@@ -15,7 +15,7 @@ import { theme } from '../../src/styles/theme';
 function makeStore(opts: { phase: GameState['phase']; lastBet: number; bankroll: number; status: GameState['players'][number]['status'] }) {
   const state: GameState = {
     roomId: 'R', phase: opts.phase, shoeSize: 200, cutCardIndex: 50,
-    players: [{ id: 's0', name: 'Alice', bankroll: opts.bankroll, hands: [], status: opts.status, connectedAt: 0, lastBet: opts.lastBet }],
+    players: [{ id: 's0', name: 'Alice', bankroll: opts.bankroll, hands: [], status: opts.status, connectedAt: 0, lastBet: opts.lastBet, activeHandIndex: 0 }],
     dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
     activeSeat: null, roundNumber: 1, lastResult: null,
   };

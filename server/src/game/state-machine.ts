@@ -460,6 +460,7 @@ export function createInitialState(roomId: string, seatCount: number, _roundNumb
     status: 'empty' as const,
     connectedAt: Date.now(),
     lastBet: 0,
+    activeHandIndex: 0,
   }));
   return {
     roomId,

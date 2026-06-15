@@ -13,6 +13,7 @@ function seat(id: string, status: PlayerSeat['status'] = 'sitting_out'): PlayerS
     status,
     connectedAt: 0,
     lastBet: 0,
+    activeHandIndex: 0,
   };
 }
 

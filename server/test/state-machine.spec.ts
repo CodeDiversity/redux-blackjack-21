@@ -215,11 +215,11 @@ describe('applyAction: round:advance', () => {
       lastResult: { payouts: [{ seatId: 'x', delta: 50, reason: 'win' }] },
       activeSeat: null,
       players: [
-        { id: 's0', name: 'Alice', bankroll: 1050, hands: [{ cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }], bet: 0, stood: true, busted: false, isBlackjack: false, doubled: false }], status: 'stood', connectedAt: 0, lastBet: 50 },
-        { id: 's1', name: 'Bob', bankroll: 950, hands: [{ cards: [{ suit: '♠', rank: 'K' }, { suit: '♥', rank: '9' }], bet: 0, stood: true, busted: false, isBlackjack: false, doubled: false }], status: 'stood', connectedAt: 0, lastBet: 100 },
-        { id: 's2', name: 'Carol', bankroll: 0, hands: [{ cards: [], bet: 0, stood: false, busted: true, isBlackjack: false, doubled: false }], status: 'busted', connectedAt: 0, lastBet: 200 },
-        { id: 's3', name: 'Dan', bankroll: 0, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'sitting_out', connectedAt: 0, lastBet: 0 },
-        { id: 's4', name: '', bankroll: 1000, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'empty', connectedAt: 0, lastBet: 0 },
+        { id: 's0', name: 'Alice', bankroll: 1050, hands: [{ cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }], bet: 0, stood: true, busted: false, isBlackjack: false, doubled: false }], status: 'stood', connectedAt: 0, lastBet: 50, activeHandIndex: 0 },
+        { id: 's1', name: 'Bob', bankroll: 950, hands: [{ cards: [{ suit: '♠', rank: 'K' }, { suit: '♥', rank: '9' }], bet: 0, stood: true, busted: false, isBlackjack: false, doubled: false }], status: 'stood', connectedAt: 0, lastBet: 100, activeHandIndex: 0 },
+        { id: 's2', name: 'Carol', bankroll: 0, hands: [{ cards: [], bet: 0, stood: false, busted: true, isBlackjack: false, doubled: false }], status: 'busted', connectedAt: 0, lastBet: 200, activeHandIndex: 0 },
+        { id: 's3', name: 'Dan', bankroll: 0, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'sitting_out', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
+        { id: 's4', name: '', bankroll: 1000, hands: [{ cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false }], status: 'empty', connectedAt: 0, lastBet: 0, activeHandIndex: 0 },
       ],
     } as GameState;
   }

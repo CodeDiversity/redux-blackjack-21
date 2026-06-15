@@ -22,7 +22,7 @@ function makeStore(opts: {
     shoeSize: 200,
     cutCardIndex: 50,
     players: [
-      { id: 's0', name: 'Alice', bankroll: 1000, hands: [], status: 'stood', connectedAt: 0, lastBet: 50 },
+      { id: 's0', name: 'Alice', bankroll: 1000, hands: [], status: 'stood', connectedAt: 0, lastBet: 50, activeHandIndex: 0 },
     ],
     dealer: { cards: [], bet: 0, stood: false, busted: false, isBlackjack: false, doubled: false },
     activeSeat: null,

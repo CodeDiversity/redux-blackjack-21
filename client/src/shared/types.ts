@@ -15,6 +15,7 @@ export type PlayerSeat = {
   id: string; name: string; bankroll: number;
   hands: Hand[]; status: SeatStatus; connectedAt: number;
   lastBet: number;
+  activeHandIndex: number;
 };
 export type Phase = 'lobby' | 'betting' | 'dealing' | 'player_turn' | 'dealer_turn' | 'settled';
 export type RoundResult = {
