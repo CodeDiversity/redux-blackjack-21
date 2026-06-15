@@ -203,36 +203,6 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
-  @SubscribeMessage('round:advance')
-  onAdvance(@ConnectedSocket() client: Socket) {
-    const ctx = this.rooms.roomForSocket(client.id);
-    if (!ctx) return this.sendError(client, 'NOT_YOUR_TURN');
-    const lobby = this.rooms.getLobbyState(ctx.roomId);
-    if (!lobby || lobby.hostId !== ctx.seatId) return this.sendError(client, 'NOT_HOST');
-    try {
-      const state = this.rooms.apply(ctx.roomId, { type: 'round:advance', seatId: ctx.seatId });
-      this.broadcastAll(ctx.roomId, state);
-    } catch (e) {
-      if (e instanceof GameError) return this.sendError(client, e.code as any);
-      throw e;
-    }
-  }
-
-  @SubscribeMessage('round:start')
-  onStart(@ConnectedSocket() client: Socket) {
-    const ctx = this.rooms.roomForSocket(client.id);
-    if (!ctx) return this.sendError(client, 'NOT_YOUR_TURN');
-    try {
-      this.games.ensureShoe(ctx.roomId, this.rooms.getState(ctx.roomId)!);
-      const draw = () => this.games.draw(ctx.roomId).card;
-      const state = this.rooms.apply(ctx.roomId, { type: 'round:start', seatId: ctx.seatId }, draw);
-      this.broadcastAll(ctx.roomId, state);
-    } catch (e) {
-      if (e instanceof GameError) return this.sendError(client, e.code as any);
-      throw e;
-    }
-  }
-
   @SubscribeMessage('bet:place')
   onBet(@ConnectedSocket() client: Socket, @MessageBody() body: { amount: number }) {
     const ctx = this.rooms.roomForSocket(client.id);
