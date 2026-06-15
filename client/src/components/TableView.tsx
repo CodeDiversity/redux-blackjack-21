@@ -2,6 +2,7 @@ import { useSelector } from 'react-redux';
 import styled from 'styled-components';
 import { DealerArea } from './DealerArea';
 import { PlayerSeatView } from './PlayerSeat';
+import { EmptySeatTile } from './EmptySeatTile';
 import { ActionPanel } from './ActionPanel';
 import { BetPanel } from './BetPanel';
 import { DealButton } from './DealButton';
@@ -88,16 +89,18 @@ export function TableView() {
         <DealerArea />
         <Brand>BLACKJACK PAYS 3 TO 2</Brand>
         <Seats>
-          {state.players
-            .filter((p) => p.status !== 'empty')
-            .map((p) => (
+          {state.players.map((p) =>
+            p.status === 'empty' ? (
+              <EmptySeatTile key={p.id} />
+            ) : (
               <PlayerSeatView
                 key={p.id}
                 seat={p}
                 isActive={state.activeSeat !== null && state.players[state.activeSeat]?.id === p.id}
                 isMe={p.id === selfSeatId}
               />
-            ))}
+            ),
+          )}
         </Seats>
         <BottomRow>
           <BetPanel />
