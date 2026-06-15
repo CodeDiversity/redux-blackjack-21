@@ -12,7 +12,7 @@ Replace the host-driven round advancement with two time-driven transitions on th
 1. After a hand resolves (`settled`), wait **3 seconds**, then auto-advance to the betting phase. The host's "Next Hand" button is removed.
 2. During the betting phase, players get a **10-second** window to place a bet. When the window closes, if at least one player has bet, deal the round and auto-sit-out any seated players who didn't bet. If zero players have bet, re-loop the betting window.
 
-The lobby's "Begin Betting" host gate is preserved. The deal can still be triggered early by the host (Deal button is kept but relaxed to require ≥1 bet rather than all bets).
+The lobby's "Begin Betting" host gate is preserved. The host's "Deal" button is removed — the 10s timer is the only path out of `betting`.
 
 ## Non-Goals
 
@@ -20,7 +20,7 @@ The lobby's "Begin Betting" host gate is preserved. The deal can still be trigge
 - Adding persistent storage of `phaseEndsAt` to localStorage. A reconnecting client gets a fresh value on the next broadcast.
 - Animations for the transition between phases.
 - Per-player bet timers (one shared room-level window).
-- A "Deal Now" host accelerator that short-circuits the 10s bet window. The Deal button stays but is no longer required.
+- A "Deal Now" host accelerator that short-circuits the 10s bet window. The host's "Deal" button is removed; the 10s timer is the only path out of `betting`.
 - Animating the countdown digits.
 
 ## Constraints / Decisions Locked In
@@ -29,10 +29,10 @@ The lobby's "Begin Betting" host gate is preserved. The deal can still be trigge
 |---|---|---|
 | Where timers live | Gateway, not the state machine | Mirrors the existing disconnect-grace pattern. State machine refactor was explicit that timers belong outside the machine. |
 | Phase auto-advance trigger | Server-internal `setTimeout` keyed by `roomId` | One timer per room; cancelled on phase change. |
-| New state machine action | `round:betDeadline` (server-internal, not on `ClientCommand`) | Same shape as `round:start` (with pre-drawn `dealtCards` and `dealerUpcard`) so the deal step reuses `assignDeal`. |
+| New state machine action | `round:betDeadline` (server-internal, not on `ClientCommand`) | Pre-attached `dealtCards` and `dealerUpcard` so the gateway's `drawBridge.prepareEvent` is reused; the state machine's `assignBetDeadline` populates cards from the event payload. |
 | `round:advance` trigger | Server-internal `setTimeout` 3s after entering `settled` | Reuses the existing `round:advance` action; just changes who fires it (gateway, not host). |
 | Zero-bet end of bet window | Re-loop to `betting` (per user) | Avoids an infinite-spin edge case; new 10s window opens immediately. |
-| `round:start` host button | Keep, but relax guard to `hasAtLeastOneBet` | Host can still short-circuit the 10s window by clicking Deal. |
+| `round:start` action | Removed from state machine, gateway, and `ClientCommand` | The Deal button is removed; the 10s timer is the only path out of `betting`. The action type is gone end-to-end for cleanliness. |
 | Lobby "Begin Betting" | Keep host-gated | Per user. The 10s window starts on entering `betting` from any path. |
 | Countdown UI | Both 3s and 10s shown to clients | Per user. |
 | `phaseEndsAt` field on `GameState` | New; server-broadcast only | Lets client render countdowns without an extra wire event. |
@@ -46,7 +46,7 @@ The split is the same as the disconnect-grace refactor and the state-machine ref
 
 | Layer | Responsibility | What changes |
 |---|---|---|
-| State machine | Pure transitions; no `Date.now()`; no `setTimeout` | New action `round:betDeadline`; new guard `hasAtLeastOneBet`; new `assignBetDeadline` (sits out unbetters + deals) and `assignBetDeadlineEmpty` (re-loops); existing `assignDeal` is refactored to share logic with the new path. The `round:start` guard is relaxed to `hasAtLeastOneBet`. |
+| State machine | Pure transitions; no `Date.now()`; no `setTimeout` | New action `round:betDeadline`; new guard `hasAtLeastOneBet`; new `assignBetDeadline` (sits out unbetters + deals) and `assignBetDeadlineEmpty` (re-loops). The previous `assignDeal` and the `round:start` action are removed. |
 | Gateway | Side effects: timers, broadcasts, host check, room lifecycle | New `pendingTimers` map keyed by `roomId` storing `{ timer, fireAt }`; new `scheduleAutoAdvance` / `cancelAutoAdvance` / `fireAutoAdvance`; new `attachPhaseEndsAt` helper that decorates `game:state` payloads with the timer's `fireAt`; `broadcastAll` now drives timer scheduling off the post-transition phase. The `@SubscribeMessage('round:advance')` and its handler are removed (the gateway's `onAdvance` is no longer needed; the timer fires the action via `rooms.apply`). |
 | Config | Tunable durations | `SETTLE_PAUSE_MS: 3_000`, `BET_DEADLINE_MS: 10_000`. |
 | Client | View | New `useNow` hook; countdown line in `ResultOverlay` (3s) and `BetPanel` (10s); `DealButton` removed; `selectPhaseEndsAt` selector. |
@@ -70,7 +70,7 @@ export type Action =
 | { type: 'round:betDeadline'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card }
 ```
 
-Same shape as `round:start`: pre-drawn by the gateway via `drawBridge.prepareEvent`, attached to the event. The state machine's assign step uses the same `dealtCards` / `dealerUpcard` payload.
+Pre-drawn by the gateway via `drawBridge.prepareEvent` and attached to the event. The state machine's `assignBetDeadline` reads the `dealtCards` / `dealerUpcard` payload to populate the dealt hands.
 
 ### New guard: `hasAtLeastOneBet`
 
@@ -80,29 +80,19 @@ Same shape as `round:start`: pre-drawn by the gateway via `drawBridge.prepareEve
     p.status !== 'empty' && p.status !== 'sitting_out' && p.hands[0]?.bet > 0) },
 ```
 
-The `errorCode` is new: `NO_BETS`. Thrown by `round:start` / `round:betDeadline` arriving when 0 players have bet — except the fallback transition (re-loop) handles that case, so `NO_BETS` is effectively never thrown on the wire. It exists in the union for `inferRejectionReason` and for tests.
+The `errorCode` is new: `NO_BETS`. Thrown by `round:betDeadline` arriving when 0 players have bet — except the fallback transition (re-loop) handles that case, so `NO_BETS` is effectively never thrown on the wire. It exists in the union for `inferRejectionReason` and for tests.
 
-### Relaxed `round:start` guard
+### Removal of `round:start` action (host Deal button)
 
-`round:start` previously required `allPlayersReady` (every seated player has bet). It now uses `hasAtLeastOneBet`. The host's "Deal" button can short-circuit the 10s bet window with a single bet placed.
+The `round:start` action is removed end-to-end: from the state machine `Action` and `GameEvent` types, from `ClientCommand`, and from the gateway's `onStart` handler. The 10s timer is the only path out of `betting`. The relaxed `hasAtLeastOneBet` guard is still useful — it gates the new `round:betDeadline` action — and the existing `allPlayersReady` guard is removed entirely.
 
 ### New `assignBetDeadline`
 
-A thin wrapper that:
+A new `assign` action that:
 1. Auto-sits-out seated players with `hands[0].bet === 0` (status flips to `sitting_out`).
-2. Calls a refactored shared deal helper to populate cards.
+2. Populates the dealt cards and dealer upcard from the event payload.
 
-```ts
-// Factor the existing assignDeal logic into a shared helper:
-function dealAndMaybeSitOut(
-  players: PlayerSeat[],
-  dealtCards: { playerIndex: number; cards: [Card, Card] }[],
-  dealerUpcard: Card,
-  sitOutUnbetters: boolean,
-): PlayerSeat[] { ... }
-```
-
-`assignDeal` calls it with `sitOutUnbetters: false` (host already validated all bet). `assignBetDeadline` calls it with `sitOutUnbetters: true`. No duplication.
+The previous `assignDeal` is replaced by `assignBetDeadline` with `sitOutUnbetters: false` (no auto-sit-out; the 10s path always uses `true`, but the action supports both for testability and in case a future entry path wants the no-sit-out variant). Since `round:start` is removed, the only caller in the live code path uses `true`.
 
 ### New `assignBetDeadlineEmpty`
 
@@ -118,7 +108,6 @@ Re-loop path. Resets the action counter and clears `activeSeat` and `lastResult`
 betting: {
   on: {
     'bet:place': { actions: 'assignBet', guard: and(['isValidBetAmount', 'hasSufficientFundsForBet']) },
-    'round:start': { target: 'player_turn', actions: 'assignDeal', guard: 'hasAtLeastOneBet' },
     'round:betDeadline': [
       { target: 'player_turn', actions: 'assignBetDeadline', guard: 'hasAtLeastOneBet' },
       { target: 'betting', actions: 'assignBetDeadlineEmpty' },
@@ -141,13 +130,13 @@ XState v5 evaluates transitions in order. The first matching transition fires; t
 
 | Item | Change |
 |---|---|
-| `Action` type | Add `round:betDeadline` |
-| `GameEvent` type | Add same variant, with `dealtCards` and `dealerUpcard` pre-attached |
-| `ClientCommand` type | Remove `round:advance` (no client emits it) |
-| Guards | Add `hasAtLeastOneBet`; relax `round:start` to use it |
-| `actionGuards` map | Add `round:betDeadline: ['hasAtLeastOneBet']` |
-| Assigns | Add `assignBetDeadline` and `assignBetDeadlineEmpty`; factor shared deal logic from `assignDeal` into a helper |
-| Transitions | `betting` state: add `round:betDeadline` with two transitions (deal vs. re-loop) |
+| `Action` type | Add `round:betDeadline`; remove `round:start` |
+| `GameEvent` type | Add same variant, with `dealtCards` and `dealerUpcard` pre-attached; remove `round:start` variant |
+| `ClientCommand` type | Remove `round:advance` and `round:start` (no client emits either) |
+| Guards | Add `hasAtLeastOneBet`; remove `allPlayersReady` (no longer used) |
+| `actionGuards` map | Add `round:betDeadline: ['hasAtLeastOneBet']`; remove `'round:start'` entry |
+| Assigns | Add `assignBetDeadline` and `assignBetDeadlineEmpty`; rename `assignDeal`'s internals to be the new `assignBetDeadline` with `sitOutUnbetters: false` (no duplication) |
+| Transitions | `betting` state: add `round:betDeadline` with two transitions (deal vs. re-loop); remove `round:start` from `betting` |
 | `errorCode` `NO_BETS` | New |
 
 ## Gateway Changes
@@ -192,7 +181,7 @@ private fireAutoAdvance(roomId: string, phase: 'settled' | 'betting') {
       // Server-internal round:advance. seatId '__server__' is a sentinel for tracing.
       this.rooms.apply(roomId, { type: 'round:advance', seatId: '__server__' });
     } else {
-      // betting → deal or re-loop. Mirror round:start: pre-draw cards via ensureShoe + draw.
+      // betting → deal or re-loop. Mirror what round:start used to do: pre-draw cards via ensureShoe + draw.
       this.games.ensureShoe(roomId, this.rooms.getState(roomId)!);
       const draw = () => this.games.draw(roomId).card;
       this.rooms.apply(roomId,
@@ -228,7 +217,7 @@ private broadcastAll(roomId: string, state: GameState) {
 }
 ```
 
-`broadcastAll` is called from `onReady`, `onAdvance` (now removed), `onStart`, `onBet`, hand actions, `handleConnection`, and `handleDisconnect`'s deferred-leave callback. The post-transition phase drives the timer schedule automatically.
+`broadcastAll` is called from `onReady`, `onBet`, hand actions, `handleConnection`, and `handleDisconnect`'s deferred-leave callback. The post-transition phase drives the timer schedule automatically. The previous `onStart` is removed.
 
 ### `attachPhaseEndsAt`
 
@@ -286,17 +275,20 @@ export type GameState = {
 };
 ```
 
+### Unchanged wire events / commands
+
+`lobby:state`, `game:state` (with new field), `round:result`, `error`, `bet:place`, `hand:hit`, `hand:stand`, `hand:double`, `hand:split`, `round:ready`, `room:create`, `room:join`, `room:resume`.
+
 ### Removed wire events / commands
 
 | Removed | Reason |
 |---|---|
-| `ClientCommand: { type: 'round:advance' }` | No client emits it. |
+| `ClientCommand: { type: 'round:advance' }` | No client emits it; the gateway's 3s timer fires it via `rooms.apply`. |
+| `ClientCommand: { type: 'round:start' }` | The Deal button is removed; the 10s timer is the only path out of `betting`. |
 | `@SubscribeMessage('round:advance')` | No client emits. |
+| `@SubscribeMessage('round:start')` | No client emits. |
 | `getSocket().emit('round:advance')` in `ResultOverlay.tsx` | Button removed. |
-
-### Unchanged wire events / commands
-
-`lobby:state`, `game:state` (with new field), `round:result`, `error`, `bet:place`, `hand:hit`, `hand:stand`, `hand:double`, `hand:split`, `round:ready`, `room:create`, `room:join`, `room:resume`.
+| `getSocket().emit('round:start')` in `DealButton.tsx` | Component removed. |
 
 ### `ErrorCode` union
 
@@ -316,7 +308,7 @@ Add `'NO_BETS'` to `ErrorCode` and `ErrorMessages` in `server/src/shared/errors.
 
 ### `<DealButton>` removal
 
-The Deal button (host's `round:start` accelerator) is **removed**. Rationale: the 10s timer is the only path out of `betting`; a host-side accelerator adds complexity without clear benefit. The state machine still accepts `round:start` (in case a future feature wants it); the gateway's `onStart` handler stays as dead code for now (or is removed for cleanliness — TBD in implementation).
+The Deal button (host's `round:start` accelerator) is **removed** end-to-end. Rationale: the 10s timer is the only path out of `betting`; a host-side accelerator adds complexity without clear benefit. The component file is deleted; the gateway's `onStart` handler is removed; the state machine's `round:start` action type and transition are removed.
 
 ### `useNow` hook (new, `client/src/lib/useNow.ts`)
 
@@ -450,21 +442,21 @@ Client: countdown restarts at 10
   - Re-loops `betting → betting` (with `__actionCount` incremented) when 0 players have bet.
   - Re-loops without clearing existing bets.
   - Does not affect `empty` or already-`sitting_out` seats.
-- `applyAction: round:start` (modify existing): add a test that the relaxed guard allows `round:start` when only 1 of 2 seated players has bet.
+- `applyAction: round:start` (modify or remove existing): existing tests reference `round:start` and the host Deal button. Update them to use `round:betDeadline` instead. The "all-players-bet" test for `round:start` becomes an "at-least-one-bet" test for `round:betDeadline`. Existing tests for the host-click Deal path are deleted (no host click in the new flow).
 - `hasAtLeastOneBet` guard unit tests: returns true when ≥1 seated player has `hands[0].bet > 0`; false when all seated players have `hands[0].bet === 0`; false when no players are seated; ignores `empty` / `sitting_out`.
 
 **`state-machine-xstate.spec.ts` (extend)**:
 
 - The `betting` state has two transitions for `round:betDeadline`: one to `player_turn` (guarded by `hasAtLeastOneBet`), one to `betting` (fallback re-loop).
-- The `betting` state still accepts `round:start` with the new guard.
+- The `betting` state no longer accepts `round:start`; it accepts only `bet:place` and `round:betDeadline`.
 
 **`gateway-auto-advance.spec.ts` (new)**:
 
-- 3s settle-pause: in `settled`, after 3s with no client input, `round:advance` is auto-fired; `game:state` transitions to `betting`; `phaseEndsAt` is set.
-- 10s bet-deadline with ≥1 bet: in `betting`, after 10s with ≥1 player bet, `round:betDeadline` is auto-fired; transitions to `player_turn`; non-betters' seats go to `sitting_out`.
+- 3s settle-pause: in `settled`, after 3s with no client input, the gateway fires a server-internal `round:advance` via `rooms.apply`; `game:state` transitions to `betting`; `phaseEndsAt` is set.
+- 10s bet-deadline with ≥1 bet: in `betting`, after 10s with ≥1 player bet, the gateway fires a server-internal `round:betDeadline`; transitions to `player_turn`; non-betters' seats go to `sitting_out`.
 - 10s bet-deadline with 0 bets: in `betting`, after 10s with no bets, the round re-loops; broadcast stays in `betting` with a fresh `phaseEndsAt`.
 - `phaseEndsAt` is `null` when entering `player_turn` / `dealer_turn` / `lobby` and a positive ms-epoch when entering `betting` / `settled`.
-- `round:advance` socket message removed: emitting from the client now returns a socket.io error (no handler).
+- `round:advance` and `round:start` socket messages removed: emitting either from the client now returns a socket.io error (no handler).
 - Use `jest.useFakeTimers()` for time-based tests.
 
 ### Client unit (Vitest)
@@ -505,9 +497,9 @@ Client: countdown restarts at 10
 | `server/src/config.ts` | Add `SETTLE_PAUSE_MS = 3_000`, `BET_DEADLINE_MS = 10_000` |
 | `server/src/shared/types.ts` | Add `phaseEndsAt: number \| null` to `GameState`; remove `round:advance` from `ClientCommand`; add `NO_BETS` to `ErrorCode` |
 | `server/src/shared/errors.ts` | Add `NO_BETS` to `ErrorMessages` |
-| `server/src/game/state-machine.ts` | Add `round:betDeadline` action; relax `round:start` guard; add `hasAtLeastOneBet` guard; add `assignBetDeadline` and `assignBetDeadlineEmpty`; factor `assignDeal` to share logic |
-| `server/src/gateway/game.gateway.ts` | Add `pendingTimers` map; add `scheduleAutoAdvance` / `cancelAutoAdvance` / `fireAutoAdvance` / `attachPhaseEndsAt`; modify `broadcastAll` to drive timers; remove `@SubscribeMessage('round:advance')` and `onAdvance`; cancel timer on room destroy |
-| `server/test/state-machine.spec.ts` | Add `round:betDeadline` describe; add `hasAtLeastOneBet` tests; relax `round:start` test |
+| `server/src/game/state-machine.ts` | Add `round:betDeadline` action; remove `round:start` action; add `hasAtLeastOneBet` guard; remove `allPlayersReady` guard; add `assignBetDeadline` and `assignBetDeadlineEmpty`; replace `assignDeal` (no longer used) |
+| `server/src/gateway/game.gateway.ts` | Add `pendingTimers` map; add `scheduleAutoAdvance` / `cancelAutoAdvance` / `fireAutoAdvance` / `attachPhaseEndsAt`; modify `broadcastAll` to drive timers; remove `@SubscribeMessage('round:advance')` and `onAdvance`; remove `@SubscribeMessage('round:start')` and `onStart`; cancel timer on room destroy |
+| `server/test/state-machine.spec.ts` | Add `round:betDeadline` describe; add `hasAtLeastOneBet` tests; remove or update `round:start` tests (no longer applicable) |
 | `server/test/state-machine-xstate.spec.ts` | Add betting-state transition tests |
 | `server/test/gateway-auto-advance.spec.ts` (new) | Timer-driven auto-advance tests |
 | `client/src/shared/types.ts` | Add `phaseEndsAt: number \| null` to `GameState` |
@@ -516,7 +508,7 @@ Client: countdown restarts at 10
 | `client/src/lib/useNow.ts` (new) | `useNow(intervalMs)` hook |
 | `client/src/components/ResultOverlay.tsx` | Remove "Next Hand" button; add countdown line |
 | `client/src/components/BetPanel.tsx` | Add countdown line |
-| `client/src/components/DealButton.tsx` | **Removed** (file may be deleted or left as dead code; TBD in implementation) |
+| `client/src/components/DealButton.tsx` | **Deleted** (component is gone; the 10s timer is the only path out of `betting`) |
 | `client/test/lib/useNow.spec.ts` (new) | Hook unit tests |
 | `client/test/components/ResultOverlay.spec.tsx` (new) | Component tests |
 | `client/test/components/BetPanel.spec.tsx` (new) | Component tests |
@@ -525,7 +517,6 @@ Client: countdown restarts at 10
 
 ## Open Questions (non-blocking)
 
-- **TBD in implementation:** delete `client/src/components/DealButton.tsx` outright, or leave as dead code in case a future feature wants a host-side accelerator. The state machine still accepts `round:start`; the gateway's `onStart` could stay or be removed.
 - **Disconnected player during a bet window** keeps their seat through the 30s grace. If they reconnect within grace and place a bet, the existing reconnect flow handles it. No change.
 - **A player who is `sitting_out` because they didn't bet last round** keeps `lastBet` (preserved by `assignBetDeadline`). On the next `betting` phase, the Rebet button is available. The 10s window does **not** restart when a sitting-out player returns. Acceptable.
 - **The `DealButton` is removed; the host's "Begin Betting" remains.** If the table is hostless after a host disconnect + 30s grace, `pickHost` re-picks. The new host can then start the next lobby round. Auto-advance from `settled` continues to work without a host.
@@ -533,7 +524,7 @@ Client: countdown restarts at 10
 ## Known Follow-ups (deferred)
 
 - Persistence of `phaseEndsAt` across reconnect (client recomputes from latest broadcast; persisting risks staleness).
-- An optional host-side "Deal Now" accelerator (would re-add a Deal button).
+- An optional host-side "Deal Now" accelerator (would re-add a Deal button and re-introduce `round:start`).
 - Animation of the countdown digits.
 - Per-player bet timers (currently one shared 10s room window).
 - Server-sent countdown events for clients with unreliable clocks (out of scope; client uses `Date.now()` for display only).
