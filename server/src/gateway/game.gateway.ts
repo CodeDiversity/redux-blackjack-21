@@ -43,23 +43,40 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('room:create')
   onCreate(@ConnectedSocket() client: Socket, @MessageBody() body: { name: string }) {
     if (!body?.name?.trim()) return this.sendError(client, 'NAME_REQUIRED');
-    const { roomId, seatId, state } = this.rooms.createRoom(client.id, body.name.trim());
+    const { roomId, seatId, seatToken, state } = this.rooms.createRoom(client.id, body.name.trim());
     this.socketToRoom.set(client.id, roomId);
     this.games.ensureShoe(roomId, state);
     this.emit(client, { type: 'lobby:state', payload: this.rooms.getLobbyState(roomId)! });
     this.emit(client, { type: 'game:state', payload: this.publicState(state) });
     client.join(roomId);
-    return { seatId, roomId };
+    return { seatId, seatToken, roomId };
   }
 
   @SubscribeMessage('room:join')
   onJoin(@ConnectedSocket() client: Socket, @MessageBody() body: { roomId: string; name: string }) {
     if (!body?.name?.trim()) return this.sendError(client, 'NAME_REQUIRED');
     try {
-      const { seatId, state } = this.rooms.joinRoom(body.roomId, client.id, body.name.trim());
+      const { seatId, seatToken, state } = this.rooms.joinRoom(body.roomId, client.id, body.name.trim());
       this.socketToRoom.set(client.id, body.roomId);
       this.games.ensureShoe(body.roomId, state);
       client.join(body.roomId);
+      this.broadcastAll(body.roomId, state);
+      return { seatId, seatToken };
+    } catch (e) {
+      if (e instanceof GameError) return this.sendError(client, e.code as any);
+      throw e;
+    }
+  }
+
+  @SubscribeMessage('room:resume')
+  onResume(@ConnectedSocket() client: Socket, @MessageBody() body: { roomId: string; seatToken: string }) {
+    if (!body?.roomId || !body?.seatToken) return this.sendError(client, 'NAME_REQUIRED');
+    try {
+      const { seatId, state } = this.rooms.resumeSeat(body.roomId, body.seatToken, client.id);
+      this.socketToRoom.set(client.id, body.roomId);
+      client.join(body.roomId);
+      this.emit(client, { type: 'lobby:state', payload: this.rooms.getLobbyState(body.roomId)! });
+      this.emit(client, { type: 'game:state', payload: this.publicState(state) });
       this.broadcastAll(body.roomId, state);
       return { seatId };
     } catch (e) {

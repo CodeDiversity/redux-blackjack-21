@@ -177,4 +177,48 @@ describe('gateway integration: 2-player full round', () => {
 
     host.disconnect();
   }, 10_000);
+
+  describe('room:resume', () => {
+    it('rebinds a returning client to the same seat using the seatToken', async () => {
+      const host = io(url, { transports: ['websocket'], forceNew: true });
+      await new Promise<void>((r) => host.on('connect', () => r()));
+
+      const lobby1 = listen<LobbyState>(host, 'lobby:state');
+      const created = await new Promise<{ seatId: string; seatToken: string }>((resolve) => {
+        host.emit('room:create', { name: 'Alice' }, (resp: any) => resolve(resp));
+      });
+      const lobbyState = await lobby1;
+      const roomId = lobbyState.roomId;
+      expect(created.seatId).toBeTruthy();
+      expect(created.seatToken).toBeTruthy();
+
+      // Simulate a reload: a fresh socket reconnects with the seatToken.
+      const fresh = io(url, { transports: ['websocket'], forceNew: true });
+      await new Promise<void>((r) => fresh.on('connect', () => r()));
+      const lobby2 = listen<LobbyState>(fresh, 'lobby:state');
+      const resumed = await new Promise<{ seatId: string }>((resolve) => {
+        fresh.emit('room:resume', { roomId, seatToken: created.seatToken }, (resp: any) => resolve(resp));
+      });
+      await lobby2;
+      expect(resumed.seatId).toBe(created.seatId);
+
+      host.disconnect();
+      fresh.disconnect();
+    }, 10_000);
+
+    it('emits SEAT_GONE error when the seatToken is unknown', async () => {
+      const host = io(url, { transports: ['websocket'], forceNew: true });
+      await new Promise<void>((r) => host.on('connect', () => r()));
+      const lobby1 = listen<LobbyState>(host, 'lobby:state');
+      await new Promise<void>((resolve) => {
+        host.emit('room:create', { name: 'Alice' }, () => resolve());
+      });
+      const lobbyState = await lobby1;
+      const err = listen<{ code: string }>(host, 'error');
+      host.emit('room:resume', { roomId: lobbyState.roomId, seatToken: 'bogus' });
+      const got = await err;
+      expect(got.code).toBe('SEAT_GONE');
+      host.disconnect();
+    }, 10_000);
+  });
 });
