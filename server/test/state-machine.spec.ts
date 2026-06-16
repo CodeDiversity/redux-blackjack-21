@@ -263,7 +263,7 @@ describe('applyAction: round:betDeadline (with bets)', () => {
       { type: 'round:betDeadline', seatId: '__server__' },
       draw,
     );
-    expect(next.phase).toBe('player_turn');
+    expect(next.phase).toBe('dealing');
     expect(next.players[0].hands[0].cards.length).toBe(2);
     expect(next.dealer.cards.length).toBe(2);  // upcard + hidden
   });
@@ -388,10 +388,7 @@ describe('applyAction: round:dealingComplete', () => {
     let i = 0;
     const draw = () => deck[i++];
     state = applyAction(state, { type: 'round:betDeadline', seatId: '__server__' }, draw);
-    // Isolate this task from Task 3: betDeadline still routes to player_turn
-    // (Task 3 will retarget it to 'dealing'). Manually set phase to 'dealing'
-    // so we test only the dealingComplete transition here.
-    state = { ...state, phase: 'dealing' as const };
+    expect(state.phase).toBe('dealing');
     const handsBefore = state.players[0].hands[0].cards;
     const dealerBefore = state.dealer.cards;
     const next = applyAction(state, { type: 'round:dealingComplete', seatId: '__server__' });

@@ -472,7 +472,7 @@ export const machine = setup({
       on: {
         'bet:place': { actions: 'assignBet', guard: and(['isValidBetAmount', 'hasSufficientFundsForBet']) },
         'round:betDeadline': [
-          { target: 'player_turn', actions: 'assignBetDeadline', guard: 'hasAtLeastOneBet' },
+          { target: 'dealing', actions: 'assignBetDeadline', guard: 'hasAtLeastOneBet' },
           { target: 'betting', actions: 'assignBetDeadlineEmpty' },
         ],
       },

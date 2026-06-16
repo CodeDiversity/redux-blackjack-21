@@ -22,7 +22,7 @@ describe('XState machine: state graph shape', () => {
     // We discover states by walking transitions from a hydrated actor.
     // Start in the betting phase with one player that has bet, so the
     // hasAtLeastOneBet guard on round:betDeadline passes and we transition
-    // to player_turn.
+    // to dealing.
     const players = [{
       id: 'p0',
       name: 'Alice',
@@ -45,7 +45,7 @@ describe('XState machine: state graph shape', () => {
     actor.send({ type: 'round:betDeadline', seatId: '__server__', dealtCards: [{ playerIndex: 0, cards: [{ suit: '♠', rank: 'A' }, { suit: '♥', rank: 'K' }] }], dealerUpcard: { suit: '♠', rank: 'A' } });
     states.add(actor.getSnapshot().value as string);
 
-    expect([...states].sort()).toEqual(['betting', 'lobby', 'player_turn']);
+    expect([...states].sort()).toEqual(['betting', 'dealing', 'lobby']);
   });
 
   it('lobby transitions to betting on round:ready', () => {
@@ -88,7 +88,7 @@ describe('XState machine: state graph shape', () => {
 });
 
 describe('betting state: round:betDeadline transitions', () => {
-  it('has two transitions: one to player_turn (guarded by hasAtLeastOneBet), one to betting (re-loop)', () => {
+  it('has two transitions: one to dealing (guarded by hasAtLeastOneBet), one to betting (re-loop)', () => {
     // XState v5 exposes the resolved machine config (the typed state node
     // tree) as `machine.config`. We walk into the betting state's `on` map
     // to inspect the `round:betDeadline` transition array.
@@ -97,7 +97,7 @@ describe('betting state: round:betDeadline transitions', () => {
     const transitions = on['round:betDeadline'] as any[];
     expect(Array.isArray(transitions)).toBe(true);
     expect(transitions.length).toBe(2);
-    expect(transitions[0].target).toBe('player_turn');
+    expect(transitions[0].target).toBe('dealing');
     expect(transitions[0].guard).toBe('hasAtLeastOneBet');
     expect(transitions[1].target).toBe('betting');
   });
