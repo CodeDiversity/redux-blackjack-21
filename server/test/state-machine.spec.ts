@@ -239,7 +239,7 @@ describe('hasAtLeastOneBet guard', () => {
 });
 
 describe('applyAction: round:betDeadline (with bets)', () => {
-  it('transitions betting → player_turn and deals cards to bettors when at least 1 player has bet', () => {
+  it('transitions betting → dealing and deals cards to bettors when at least 1 player has bet', () => {
     let state = newRoom();
     state = {
       ...state,
