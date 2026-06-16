@@ -3,6 +3,7 @@ import { connectionReducer } from './connection.slice';
 import { lobbyReducer } from './lobby.slice';
 import { gameReducer } from './game.slice';
 import { uiReducer } from './ui.slice';
+import { animationReducer } from './animation.slice';
 import { socketMiddleware } from '../middleware/socket.middleware';
 import { getSocket } from '../socket/client';
 
@@ -12,6 +13,7 @@ export const store = configureStore({
     lobby: lobbyReducer,
     game: gameReducer,
     ui: uiReducer,
+    animation: animationReducer,
   },
   middleware: (getDefault) => getDefault().concat(socketMiddleware(getSocket)),
 });
