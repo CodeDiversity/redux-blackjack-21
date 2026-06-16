@@ -8,6 +8,7 @@ import { connectionReducer } from '../../src/store/connection.slice';
 import { lobbyReducer } from '../../src/store/lobby.slice';
 import { gameReducer } from '../../src/store/game.slice';
 import { uiReducer } from '../../src/store/ui.slice';
+import { animationReducer } from '../../src/store/animation.slice';
 import type { GameState, PlayerSeat } from '../../src/shared/types';
 import { theme } from '../../src/styles/theme';
 
@@ -38,12 +39,13 @@ function makeStore(seats: PlayerSeat[], selfSeatId: string | null = 's0') {
     activeSeat: null, roundNumber: 0, lastResult: null,
   };
   return configureStore({
-    reducer: { connection: connectionReducer, lobby: lobbyReducer, game: gameReducer, ui: uiReducer },
+    reducer: { connection: connectionReducer, lobby: lobbyReducer, game: gameReducer, ui: uiReducer, animation: animationReducer },
     preloadedState: {
       game: { state, lastResult: null },
       connection: { selfSeatId, status: 'connected' as const, lastError: null },
       lobby: { roomId: 'R', hostId: 's0', players: [] },
       ui: { betInputValue: 50, toasts: [] },
+      animation: { lastSeenRoundNumber: null },
     },
   } as any);
 }

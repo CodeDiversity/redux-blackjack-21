@@ -1,8 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import { ThemeProvider } from 'styled-components';
+import { configureStore } from '@reduxjs/toolkit';
+import { Provider } from 'react-redux';
 import { describe, it, expect } from 'vitest';
 import { PlayerSeatView } from '../../src/components/PlayerSeat';
 import { theme } from '../../src/styles/theme';
+import { gameReducer } from '../../src/store/game.slice';
+import { animationReducer } from '../../src/store/animation.slice';
 import type { PlayerSeat } from '../../src/shared/types';
 
 function makeSeat(overrides: Partial<PlayerSeat> = {}): PlayerSeat {
@@ -20,10 +24,19 @@ function makeSeat(overrides: Partial<PlayerSeat> = {}): PlayerSeat {
 }
 
 function renderSeat(props: { seat: PlayerSeat; isActive: boolean; isMe: boolean; dealPosition?: number }) {
+  const store = configureStore({
+    reducer: { game: gameReducer, animation: animationReducer },
+    preloadedState: {
+      game: { state: null, lastResult: null },
+      animation: { lastSeenRoundNumber: null },
+    },
+  });
   return render(
-    <ThemeProvider theme={theme}>
-      <PlayerSeatView {...props} dealPosition={props.dealPosition ?? 0} />
-    </ThemeProvider>,
+    <Provider store={store}>
+      <ThemeProvider theme={theme}>
+        <PlayerSeatView {...props} dealPosition={props.dealPosition ?? 0} />
+      </ThemeProvider>
+    </Provider>,
   );
 }
 
