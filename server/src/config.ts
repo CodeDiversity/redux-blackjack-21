@@ -15,4 +15,5 @@ export const Config = {
   ROOM_CODE_LENGTH: 5,
   SETTLE_PAUSE_MS: 3_000,
   BET_DEADLINE_MS: 10_000,
+  DEALING_DURATION_MS: 1_500,
 } as const;
