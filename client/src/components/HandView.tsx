@@ -1,6 +1,10 @@
+import { useSelector } from 'react-redux';
 import styled from 'styled-components';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { Hand, CardSlot, Card } from '../shared/types';
 import { handTotal } from '../lib/handTotal';
+import { useStaggeredReveal } from '../lib/useStaggeredReveal';
+import type { RootState } from '../store';
 
 const HandRow = styled.div<{ $isDealer: boolean }>`
   display: flex;
@@ -98,23 +102,83 @@ function CardView({ card }: { card: CardSlot }) {
   );
 }
 
+type HandViewProps = {
+  hand: Hand;
+  label?: string;
+  isDealer?: boolean;
+  handKey: string;
+  dealPosition: number;
+};
+
 export function HandView({
   hand,
   label,
   isDealer = false,
-}: {
-  hand: Hand;
-  label?: string;
-  isDealer?: boolean;
-}) {
+  handKey,
+  dealPosition,
+}: HandViewProps) {
+  const phase = useSelector((s: RootState) => s.game.state?.phase);
+  const roundNumber = useSelector((s: RootState) => s.game.state?.roundNumber);
+  const lastSeen = useSelector((s: RootState) => s.animation.lastSeenRoundNumber);
+
+  const isNewRound = roundNumber !== null && roundNumber !== undefined && roundNumber > (lastSeen ?? 0);
+
+  // Deal animation: 0 → hand.cards.length, 150ms per step.
+  const dealVisible = useStaggeredReveal(
+    hand.cards.length,
+    `${roundNumber ?? 'init'}:deal:${handKey}`,
+    150,
+    { initialCount: 0, enabled: isNewRound, startDelayMs: dealPosition * 150 },
+  );
+
+  // Dealer reveal: 1 → dealer.cards.length, 400ms per step. Only meaningful for the dealer.
+  const revealVisible = useStaggeredReveal(
+    hand.cards.length,
+    `${roundNumber ?? 'init'}:reveal:${handKey}`,
+    400,
+    { initialCount: 1, enabled: isDealer ? isNewRound : false },
+  );
+
+  const visibleCount = isDealer && (phase === 'dealer_turn' || phase === 'settled')
+    ? revealVisible
+    : dealVisible;
+
   const t = handTotal(hand);
+
+  // The dealer's hole card is face-down during dealing/player_turn.
+  const holeHidden = isDealer && (phase === 'dealing' || phase === 'player_turn' || phase === null || phase === undefined);
+
   return (
     <div>
       {label && <Label>{label}</Label>}
       <HandRow $isDealer={isDealer}>
-        {hand.cards.map((c, i) => (
-          <CardView key={i} card={c} />
-        ))}
+        <AnimatePresence>
+          {hand.cards.slice(0, visibleCount).map((c, i) => {
+            const isHole = isDealer && i === 1;
+            const cardKey = isHole
+              ? `${roundNumber ?? 'init'}-${handKey}-${i}-${holeHidden ? 'hidden' : 'shown'}`
+              : `${roundNumber ?? 'init'}-${handKey}-${i}`;
+            return (
+              <motion.div
+                key={cardKey}
+                layout
+                data-testid={isHole ? (holeHidden ? 'card-back' : 'card-front') : 'card'}
+                data-card-index={i}
+                initial={isHole && !holeHidden
+                  ? { scale: 0.4, opacity: 0, rotateY: 180 }
+                  : { scale: 0, opacity: 0 }}
+                animate={isHole && !holeHidden
+                  ? { scale: 1, opacity: 1, rotateY: 0 }
+                  : { scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                transition={{ duration: isHole && !holeHidden ? 0.5 : 0.18, ease: 'easeOut' }}
+                style={{ transformStyle: 'preserve-3d' }}
+              >
+                <CardView card={c} />
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
         <Total $hidden={t.hasHidden} $blackjack={t.isBlackjack} $bust={t.isBust}>
           {t.hasHidden && <HiddenPrefix>Showing</HiddenPrefix>}
           {t.total}
