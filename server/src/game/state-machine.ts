@@ -15,7 +15,8 @@ export type Action =
   | { type: 'hand:split'; seatId: string; handIndex: number }
   | { type: 'round:ready'; seatId: string }
   | { type: 'round:betDeadline'; seatId: string }
-  | { type: 'round:advance'; seatId: string };
+  | { type: 'round:advance'; seatId: string }
+  | { type: 'round:dealingComplete'; seatId: string };
 
 export class GameError extends Error {
   constructor(public code: string) { super(code); }
@@ -32,7 +33,8 @@ export type GameEvent =
   | { type: 'round:ready'; seatId: string }
   | { type: 'round:dealerPlay'; dealerFinalHand: CardSlot[] }
   | { type: 'round:betDeadline'; seatId: string; dealtCards: { playerIndex: number; cards: [Card, Card] }[]; dealerUpcard: Card | null }
-  | { type: 'round:advance'; seatId: string };
+  | { type: 'round:advance'; seatId: string }
+  | { type: 'round:dealingComplete'; seatId: string };
 
 // --- XState context ---------------------------------------------------------
 
@@ -73,6 +75,8 @@ export const guards: GuardDef[] = [
     predicate: (s) => s.phase === 'lobby' || s.phase === 'settled' },
   { name: 'isSettled', errorCode: 'INVALID_PHASE',
     predicate: (s) => s.phase === 'settled' },
+  { name: 'isDealingPhase', errorCode: 'INVALID_PHASE',
+    predicate: (s) => s.phase === 'dealing' },
 
   // Bet guards
   { name: 'isValidBetAmount', errorCode: 'BET_OUT_OF_RANGE',
@@ -249,6 +253,7 @@ export const machine = setup({
     isPlayerTurnPhase: makeGuardFn(guards.find((g) => g.name === 'isPlayerTurnPhase')!),
     isLobbyOrSettled: makeGuardFn(guards.find((g) => g.name === 'isLobbyOrSettled')!),
     isSettled: makeGuardFn(guards.find((g) => g.name === 'isSettled')!),
+    isDealingPhase: () => true,
     isValidBetAmount: makeGuardFn(guards.find((g) => g.name === 'isValidBetAmount')!),
     hasSufficientFundsForBet: makeGuardFn(guards.find((g) => g.name === 'hasSufficientFundsForBet')!),
     isActiveSeat: makeGuardFn(guards.find((g) => g.name === 'isActiveSeat')!),
@@ -470,6 +475,11 @@ export const machine = setup({
           { target: 'player_turn', actions: 'assignBetDeadline', guard: 'hasAtLeastOneBet' },
           { target: 'betting', actions: 'assignBetDeadlineEmpty' },
         ],
+      },
+    },
+    dealing: {
+      on: {
+        'round:dealingComplete': { target: 'player_turn', guard: 'isDealingPhase' },
       },
     },
     player_turn: {

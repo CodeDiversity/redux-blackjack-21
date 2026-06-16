@@ -367,3 +367,43 @@ describe('applyAction: round:betDeadline (no bets, re-loop)', () => {
     expect(next.lastResult).toBeNull();
   });
 });
+
+describe('applyAction: round:dealingComplete', () => {
+  it('transitions dealing → player_turn without changing hands', () => {
+    let state = newRoom();
+    // Drive the room into 'dealing' by running betDeadline with at least one bet.
+    state = {
+      ...state,
+      players: state.players.map((p, i) =>
+        i === 0
+          ? { ...p, name: 'Alice', status: 'betting', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          : p,
+      ),
+    };
+    const deck: Card[] = [
+      { suit: '♠', rank: '5' },
+      { suit: '♥', rank: '6' },
+      { suit: '♦', rank: 'K' },
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    state = applyAction(state, { type: 'round:betDeadline', seatId: '__server__' }, draw);
+    // Isolate this task from Task 3: betDeadline still routes to player_turn
+    // (Task 3 will retarget it to 'dealing'). Manually set phase to 'dealing'
+    // so we test only the dealingComplete transition here.
+    state = { ...state, phase: 'dealing' as const };
+    const handsBefore = state.players[0].hands[0].cards;
+    const dealerBefore = state.dealer.cards;
+    const next = applyAction(state, { type: 'round:dealingComplete', seatId: '__server__' });
+    expect(next.phase).toBe('player_turn');
+    expect(next.players[0].hands[0].cards).toBe(handsBefore);
+    expect(next.dealer.cards).toBe(dealerBefore);
+  });
+
+  it('throws INVALID_PHASE from any non-dealing phase', () => {
+    const state = newRoom();
+    expect(() =>
+      applyAction(state, { type: 'round:dealingComplete', seatId: '__server__' }),
+    ).toThrow('INVALID_PHASE');
+  });
+});
