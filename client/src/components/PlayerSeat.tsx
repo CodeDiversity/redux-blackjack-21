@@ -84,7 +84,17 @@ function pillLabel(isActive: boolean, isMe: boolean, status: Seat['status']): st
   return status.replace('_', ' ');
 }
 
-export function PlayerSeatView({ seat, isActive, isMe }: { seat: Seat; isActive: boolean; isMe: boolean }) {
+export function PlayerSeatView({
+  seat,
+  isActive,
+  isMe,
+  dealPosition,
+}: {
+  seat: Seat;
+  isActive: boolean;
+  isMe: boolean;
+  dealPosition: number;
+}) {
   return (
     <SeatBox $active={isActive} aria-label={`seat-${seat.name}`}>
       <Header>
@@ -101,7 +111,7 @@ export function PlayerSeatView({ seat, isActive, isMe }: { seat: Seat; isActive:
       {seat.hands.map((h, i) => (
         <HandBlock key={i}>
           {seat.hands.length > 1 && <HandLabel>Hand {i + 1}</HandLabel>}
-          <HandView hand={h} />
+          <HandView hand={h} handKey={`${seat.id}:${i}`} dealPosition={dealPosition} />
           <BetDisplay bet={h.bet} />
         </HandBlock>
       ))}
