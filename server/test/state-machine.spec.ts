@@ -352,6 +352,34 @@ describe('applyAction: round:betDeadline (with bets)', () => {
       expect(next.players[j].status).toBe('empty');
     }
   });
+
+  it('full flow: betting → dealing → player_turn preserves the dealt hand', () => {
+    let state = newRoom();
+    state = {
+      ...state,
+      players: state.players.map((p, i) =>
+        i === 0
+          ? { ...p, name: 'Alice', status: 'betting', hands: [{ cards: [], bet: 100, stood: false, busted: false, isBlackjack: false, doubled: false }] }
+          : p,
+      ),
+    };
+    const deck: Card[] = [
+      { suit: '♠', rank: '5' },
+      { suit: '♥', rank: '6' },
+      { suit: '♦', rank: 'K' },
+    ];
+    let i = 0;
+    const draw = () => deck[i++];
+    const dealing = applyAction(state, { type: 'round:betDeadline', seatId: '__server__' }, draw);
+    expect(dealing.phase).toBe('dealing');
+    expect(dealing.players[0].hands[0].cards.length).toBe(2);
+    expect(dealing.dealer.cards.length).toBe(2);  // upcard + hidden
+    const playerTurn = applyAction(dealing, { type: 'round:dealingComplete', seatId: '__server__' });
+    expect(playerTurn.phase).toBe('player_turn');
+    expect(playerTurn.players[0].hands[0].cards).toEqual(dealing.players[0].hands[0].cards);
+    expect(playerTurn.dealer.cards).toEqual(dealing.dealer.cards);
+    expect(playerTurn.roundNumber).toBe(dealing.roundNumber);  // bumped once, not twice
+  });
 });
 
 describe('applyAction: round:betDeadline (no bets, re-loop)', () => {
