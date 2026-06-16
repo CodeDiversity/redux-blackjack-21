@@ -65,14 +65,6 @@ const HandLabel = styled.div`
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
-const StatusText = styled.span`
-  color: ${({ theme }) => theme.colors.textDim};
-  font-size: ${({ theme }) => theme.typography.smallSize};
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  margin-left: ${({ theme }) => theme.spacing.sm};
-`;
-
 type Tone = 'active' | 'neutral' | 'good' | 'bad' | 'gold';
 
 function pillTone(isActive: boolean, status: Seat['status']): Tone {
@@ -83,8 +75,9 @@ function pillTone(isActive: boolean, status: Seat['status']): Tone {
   return 'neutral';
 }
 
-function pillLabel(isActive: boolean, status: Seat['status']): string {
-  if (isActive) return 'Your Turn';
+function pillLabel(isActive: boolean, isMe: boolean, status: Seat['status']): string {
+  if (isActive && isMe) return 'Your Turn';
+  if (isActive) return 'Acting';
   if (status === 'stood') return 'Stood';
   if (status === 'busted') return 'Busted';
   if (status === 'blackjack') return 'Blackjack';
@@ -98,10 +91,10 @@ export function PlayerSeatView({ seat, isActive, isMe }: { seat: Seat; isActive:
         <Name>
           {seat.name}
           {isMe && <span className="me"> (you)</span>}
-          {isActive && <span className="turn">— Your turn</span>}
+          {isActive && isMe && <span className="turn">— Your turn</span>}
         </Name>
         <StatusPill $tone={pillTone(isActive, seat.status)}>
-          {pillLabel(isActive, seat.status)}
+          {pillLabel(isActive, isMe, seat.status)}
         </StatusPill>
       </Header>
       <Bankroll amount={seat.bankroll} />
@@ -110,7 +103,6 @@ export function PlayerSeatView({ seat, isActive, isMe }: { seat: Seat; isActive:
           {seat.hands.length > 1 && <HandLabel>Hand {i + 1}</HandLabel>}
           <HandView hand={h} />
           <BetDisplay bet={h.bet} />
-          <StatusText>{seat.status}</StatusText>
         </HandBlock>
       ))}
     </SeatBox>

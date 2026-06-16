@@ -261,9 +261,12 @@ export const machine = setup({
     noAcesRuleForSplit: makeGuardFn(guards.find((g) => g.name === 'noAcesRuleForSplit')!),
     hasAtLeastOneBet: makeGuardFn(guards.find((g) => g.name === 'hasAtLeastOneBet')!),
     allHandsActed: ({ context, event }: { context: GameContext; event: GameEvent }) => {
-      // Only fire the auto-transition after a hand:* event that completed a hand.
-      // (Don't fire for hand:double / hand:split, which leave the player with a hand to act on.)
-      if (event.type === 'hand:double' || event.type === 'hand:split') return false;
+      // Don't fire the auto-transition on hand:split — that action leaves the
+      // player with a new (incomplete) hand to act on, so the every() check
+      // below would correctly return false anyway. We keep the early return
+      // as a guard against future code that might pre-mark the new hand as
+      // "complete" in assignSplit.
+      if (event.type === 'hand:split') return false;
       const acting = context.players.filter((p) => p.status === 'acting');
       if (acting.length === 0) return false;
       return acting.every((p) => p.hands.every((h) => h.stood || h.busted || h.doubled || h.cards.length === 0));

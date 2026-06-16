@@ -77,7 +77,17 @@ describe('applyAction: hand:double', () => {
   it('doubles the bet, draws one card, and locks the hand', () => {
     let state = newRoom();
     state = { ...state, phase: 'player_turn', activeSeat: 0 };
-    state = { ...state, players: state.players.map((p, i) => i === 0 ? { ...p, status: 'acting', bankroll: 1000, hands: [{ ...p.hands[0], bet: 100, cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }] }] } : p) };
+    // Two acting players so the turn advances to player 1 after player 0
+    // doubles (no auto-transition to dealer_turn). Keeps the test focused
+    // on the hand:double mechanics rather than the dealer/settle flow.
+    state = {
+      ...state,
+      players: state.players.map((p, i) => i === 0
+        ? { ...p, status: 'acting', bankroll: 1000, hands: [{ ...p.hands[0], bet: 100, cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }] }] }
+        : i === 1
+        ? { ...p, status: 'acting', bankroll: 1000, hands: [{ ...p.hands[0], bet: 100, cards: [{ suit: '♠', rank: '7' }, { suit: '♥', rank: '8' }] }] }
+        : p),
+    };
     const deck: Card[] = [
       { suit: '♦', rank: '3' },                              // double card
     ];

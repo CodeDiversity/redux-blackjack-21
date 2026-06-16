@@ -410,6 +410,72 @@ describe('activeHandIndex walks all hands in order', () => {
     expect(next.phase).not.toBe('player_turn');
     expect(next.activeSeat).toBeNull();
   });
+
+  it('hand:double as the last acting action transitions to dealer_turn', () => {
+    // Only seat 0 is acting; it doubles; phase should be dealer_turn.
+    // Regression: the allHandsActed guard was excluding hand:double events,
+    // which left the game stuck in player_turn with no active seat.
+    const hand: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    const players = createInitialState('R', Config.SEAT_COUNT).players.map((p, i) =>
+      i === 0
+        ? {
+            ...createInitialState('R', Config.SEAT_COUNT).players[0],
+            id: 's0', name: 'Alice', status: 'acting' as const, activeHandIndex: 0,
+            hands: [hand],
+          }
+        : p,
+    );
+    const state: GameState = {
+      ...createInitialState('R', Config.SEAT_COUNT), phase: 'player_turn', activeSeat: 0, players,
+    };
+    const next = applyAction(state, { type: 'hand:double', seatId: 's0', handIndex: 0 }, () => ({ suit: '♠', rank: 'A' }));
+    expect(next.players[0].hands[0].doubled).toBe(true);
+    // Phase may be 'dealer_turn' (no draw for dealer) or 'settled' (draw triggered dealer event).
+    // What matters is that the player_turn phase has ended.
+    expect(next.phase).not.toBe('player_turn');
+    expect(next.activeSeat).toBeNull();
+  });
+
+  it('hand:double as the second player advances the turn (next player or dealer)', () => {
+    // Regression: when player 1 doubles, the game should advance — either to
+    // the next player, or, if there is no next acting player, to dealer_turn.
+    const hand0: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♠', rank: '5' }, { suit: '♥', rank: '6' }],
+      bet: 50, stood: true, busted: false, isBlackjack: false, doubled: false,
+    };
+    const hand1: GameState['players'][0]['hands'][0] = {
+      cards: [{ suit: '♦', rank: '5' }, { suit: '♣', rank: '6' }],
+      bet: 50, stood: false, busted: false, isBlackjack: false, doubled: false,
+    };
+    const players = createInitialState('R', Config.SEAT_COUNT).players.map((p, i) => {
+      if (i === 0) {
+        return {
+          ...createInitialState('R', Config.SEAT_COUNT).players[0],
+          id: 's0', name: 'Alice', status: 'stood' as const, activeHandIndex: 0,
+          hands: [hand0],
+        };
+      }
+      if (i === 1) {
+        return {
+          ...createInitialState('R', Config.SEAT_COUNT).players[1],
+          id: 's1', name: 'Bob', status: 'acting' as const, activeHandIndex: 0,
+          hands: [hand1],
+        };
+      }
+      return p;
+    });
+    const state: GameState = {
+      ...createInitialState('R', Config.SEAT_COUNT), phase: 'player_turn', activeSeat: 1, players,
+    };
+    const next = applyAction(state, { type: 'hand:double', seatId: 's1', handIndex: 0 }, () => ({ suit: '♠', rank: 'A' }));
+    expect(next.players[1].hands[0].doubled).toBe(true);
+    // Phase should NOT still be player_turn — the game must advance to dealer.
+    expect(next.phase).not.toBe('player_turn');
+    expect(next.activeSeat).toBeNull();
+  });
 });
 
 describe('activeHandIndex resets when a new seat becomes active', () => {

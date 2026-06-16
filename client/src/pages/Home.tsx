@@ -166,6 +166,7 @@ export function Home() {
     const roomCode = code.trim().toUpperCase();
     getSocket().emit('room:join', { roomId: roomCode, name: name.trim() }, (resp: { seatId: string; seatToken: string } | { ok: false; code: string }) => {
       if ('seatId' in resp) {
+        storeSeatToken(roomCode, resp.seatToken);
         dispatch(selfSeatAssigned({ seatId: resp.seatId, seatToken: resp.seatToken }));
         navigate(`/room/${roomCode}`);
       } else setError(resp.code);
