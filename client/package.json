@@ -16,6 +16,7 @@
   "dependencies": {
     "@nestjs/core": "11.1.27",
     "@reduxjs/toolkit": "^2.1.0",
+    "framer-motion": "^12.40.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-redux": "^9.0.4",
