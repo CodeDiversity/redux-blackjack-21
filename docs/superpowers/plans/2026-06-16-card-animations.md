@@ -339,24 +339,24 @@ git commit -m "test(server): cover full betting → dealing → player_turn flow
 
 - [ ] **Step 1: Write the failing test for the new phase's timer**
 
-In `server/test/gateway-auto-advance.spec.ts`, append a new test at the end. Read the existing test file first to match the imports/setup pattern:
+In `server/test/gateway-auto-advance.spec.ts`, append a new test at the end. Read the existing test file first to match the imports/setup pattern, then use the same createRoom + joinRoom + placeBet helpers the file already uses to set up a 2-player room where both players have bet:
 
 ```ts
 describe('gateway dealing-phase auto-advance', () => {
-  it('broadcasts dealing then transitions to player_turn after DEALING_DURATION_MS', async () => {
-    // Set up a 2-player room, both place bets, then watch the broadcasts.
-    // The exact setup mirrors the existing 'broadcasts dealing...' tests in this file;
-    // see the file's pre-existing describe block for the createRoom/joinRoom/bet/betDeadline
-    // sequence. The new assertion: after the dealing phase begins, after
-    // Config.DEALING_DURATION_MS, the next broadcast is phase='player_turn'.
-    //
-    // (Copy the setup from the file's 'broadcasts betting' test, replace 'betting'
-    // with 'dealing', and assert the timer fires correctly.)
+  it('transitions dealing → player_turn after DEALING_DURATION_MS', async () => {
+    // (Use the same createRoom + joinRoom + placeBet sequence as the existing
+    // auto-advance tests in this file. After both players have bet, the
+    // betDeadline fire will move the room to 'dealing'. Then wait
+    // DEALING_DURATION_MS + a small buffer and assert the next broadcast
+    // is phase='player_turn'.)
+    const code = '<room code from setup>';
+    // ... (place both bets, then await betDeadline via the gateway's setTimeout
+    // chain, then assert) ...
   });
 });
 ```
 
-(If the existing test file doesn't have a suitable setup helper, follow the pattern from `server/test/gateway.integration.spec.ts` instead. Use the same createRoom + joinRoom + placeBet + force `betDeadline` sequence as the existing auto-advance tests in this file.)
+(If the existing test file doesn't have a suitable setup helper, follow the pattern from `server/test/gateway.integration.spec.ts` instead. The assertion in any case is: after the dealing phase begins, after `Config.DEALING_DURATION_MS` (with a 500ms buffer), the latest broadcast shows `phase === 'player_turn'`.)
 
 - [ ] **Step 2: Run the test, watch it fail**
 
@@ -1498,8 +1498,8 @@ export function TableView() {
             <ActionPanel />
           </BottomRow>
           <ResultOverlay />
+          <DealAnimationDriver />
         </TableSurface>
-        <DealAnimationDriver />
       </MotionConfig>
     </Page>
   );
