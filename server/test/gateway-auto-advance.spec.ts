@@ -116,3 +116,65 @@ describe('gateway auto-advance timers', () => {
     host2.disconnect();
   }, 45_000);
 });
+
+describe('gateway dealing-phase auto-advance', () => {
+  let app: INestApplication;
+  let url: string;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    app.enableCors({ origin: '*', credentials: true });
+    await app.listen(0);
+    const addr = app.getHttpServer().address();
+    url = `http://localhost:${addr.port}`;
+  });
+
+  afterAll(async () => { await app.close(); });
+
+  it('transitions dealing → player_turn after DEALING_DURATION_MS', async () => {
+    const host = io(url, { transports: ['websocket'], forceNew: true });
+    const guest = io(url, { transports: ['websocket'], forceNew: true });
+    await Promise.all([
+      new Promise<void>((r) => host.on('connect', () => r())),
+      new Promise<void>((r) => guest.on('connect', () => r())),
+    ]);
+
+    // Set up a 2-player room in betting phase, with both players having bet.
+    const lobby1 = listen<LobbyState>(host, 'lobby:state');
+    await new Promise<void>((resolve) => {
+      host.emit('room:create', { name: 'Alice' }, () => resolve());
+    });
+    const lobbyState = await lobby1;
+    const roomId = lobbyState.roomId;
+    await new Promise<void>((resolve) => {
+      guest.emit('room:join', { roomId, name: 'Bob' }, () => resolve());
+    });
+
+    const bettingPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'betting');
+    host.emit('round:ready');
+    await bettingPromise;
+    host.emit('bet:place', { amount: 50 });
+    guest.emit('bet:place', { amount: 50 });
+
+    // The bet deadline fires automatically; the gateway then transitions
+    // the room to 'dealing' and schedules a DEALING_DURATION_MS timer.
+    // Wait for 'dealing' to appear, then assert it carries phaseEndsAt,
+    // and finally assert the next phase is 'player_turn'.
+    const dealingPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'dealing');
+    await new Promise((r) => setTimeout(r, Config.BET_DEADLINE_MS + 500));
+    const dealing = await dealingPromise;
+    expect(dealing.phase).toBe('dealing');
+    expect(dealing.phaseEndsAt).not.toBeNull();
+    expect(dealing.phaseEndsAt!).toBeGreaterThan(Date.now());
+    expect(dealing.phaseEndsAt!).toBeLessThanOrEqual(Date.now() + Config.DEALING_DURATION_MS + 100);
+
+    const playerTurnPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'player_turn');
+    await new Promise((r) => setTimeout(r, Config.DEALING_DURATION_MS + 500));
+    const playerTurn = await playerTurnPromise;
+    expect(playerTurn.phase).toBe('player_turn');
+
+    host.disconnect();
+    guest.disconnect();
+  }, 20_000);
+});

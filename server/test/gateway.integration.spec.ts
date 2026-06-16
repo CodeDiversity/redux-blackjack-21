@@ -58,9 +58,10 @@ describe('gateway integration: 2-player full round', () => {
     guest.emit('bet:place', { amount: 50 });
     await Promise.all([betState1, betState2]);
 
-    const startedPromise = listen<GameState>(host, 'game:state', (s) => s.phase !== 'lobby' && s.phase !== 'betting');
-    // The deal fires automatically when the 10s bet deadline elapses.
-    await new Promise((r) => setTimeout(r, Config.BET_DEADLINE_MS + 500));
+    const startedPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'player_turn');
+    // The deal fires automatically when the 10s bet deadline elapses; the
+    // dealing phase then lasts Config.DEALING_DURATION_MS before player_turn.
+    await new Promise((r) => setTimeout(r, Config.BET_DEADLINE_MS + Config.DEALING_DURATION_MS + 500));
     const started = await startedPromise;
     expect(started.phase).toBe('player_turn');
     expect(started.activeSeat).not.toBeNull();

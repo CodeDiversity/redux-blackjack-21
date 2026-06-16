@@ -102,9 +102,12 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     return true;
   }
 
-  private scheduleAutoAdvance(roomId: string, phase: 'settled' | 'betting') {
+  private scheduleAutoAdvance(roomId: string, phase: 'settled' | 'betting' | 'dealing') {
     this.cancelAutoAdvance(roomId);
-    const ms = phase === 'settled' ? Config.SETTLE_PAUSE_MS : Config.BET_DEADLINE_MS;
+    const ms =
+      phase === 'settled'  ? Config.SETTLE_PAUSE_MS :
+      phase === 'betting'  ? Config.BET_DEADLINE_MS :
+                             Config.DEALING_DURATION_MS;
     const fireAt = Date.now() + ms;
     const timer = setTimeout(() => this.fireAutoAdvance(roomId, phase), ms);
     this.pendingTimers.set(roomId, { timer, fireAt });
@@ -115,7 +118,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (entry) { clearTimeout(entry.timer); this.pendingTimers.delete(roomId); }
   }
 
-  private fireAutoAdvance(roomId: string, phase: 'settled' | 'betting') {
+  private fireAutoAdvance(roomId: string, phase: 'settled' | 'betting' | 'dealing') {
     this.pendingTimers.delete(roomId);
     const room = this.rooms.getState(roomId);
     if (!room) return;
@@ -124,6 +127,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       if (phase === 'settled') {
         // Server-internal round:advance. seatId '__server__' is a sentinel for tracing.
         this.rooms.apply(roomId, { type: 'round:advance', seatId: '__server__' });
+        this.broadcastAll(roomId, this.rooms.getState(roomId)!);
+      } else if (phase === 'dealing') {
+        this.rooms.apply(roomId, { type: 'round:dealingComplete', seatId: '__server__' });
         this.broadcastAll(roomId, this.rooms.getState(roomId)!);
       } else {
         this.games.ensureShoe(roomId, this.rooms.getState(roomId)!);
@@ -254,6 +260,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     // Drive timers off the new phase FIRST so attachPhaseEndsAt sees the new fireAt.
     if (state.phase === 'settled') this.scheduleAutoAdvance(roomId, 'settled');
     else if (state.phase === 'betting') this.scheduleAutoAdvance(roomId, 'betting');
+    else if (state.phase === 'dealing') this.scheduleAutoAdvance(roomId, 'dealing');
     else this.cancelAutoAdvance(roomId);
 
     const lobby = this.rooms.getLobbyState(roomId);
@@ -264,7 +271,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   }
 
   private attachPhaseEndsAt(roomId: string, state: GameState): GameState {
-    if (state.phase !== 'settled' && state.phase !== 'betting') {
+    if (state.phase !== 'settled' && state.phase !== 'betting' && state.phase !== 'dealing') {
       return { ...state, phaseEndsAt: null };
     }
     const entry = this.pendingTimers.get(roomId);
