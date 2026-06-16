@@ -220,8 +220,9 @@ export const Config = {
 ```ts
 /**
  * Returns the number of items currently "revealed" for the current key,
- * incrementing one at a time every `intervalMs` until it reaches `targetCount`.
- * When `flushKey` changes, instantly snaps to `targetCount` (cancels in-flight timers).
+ * starting at `initialCount` and incrementing by 1 every `intervalMs`
+ * (after an optional `startDelayMs`) until it reaches `targetCount`.
+ * Resets to `initialCount` when `key` changes.
  * When `enabled` is false, returns `targetCount` immediately.
  * When `usePrefersReducedMotion()` is true, returns `targetCount` immediately.
  */
@@ -229,42 +230,66 @@ export function useStaggeredReveal(
   targetCount: number,
   key: unknown,
   intervalMs: number,
-  options?: { enabled?: boolean; flushKey?: unknown; startDelayMs?: number },
+  options?: {
+    initialCount?: number;   // default 0
+    enabled?: boolean;        // default true
+    startDelayMs?: number;    // default 0
+  },
 ): number;
 ```
 
 **Behavior:**
 
-- `useState(0)` for the visible count, `useRef` for the timeout id.
-- `useEffect` keyed on `[key, targetCount, enabled, flushKey, intervalMs, startDelayMs]`:
+- `useState` for the visible count (initialized to `initialCount`), `useRef` for the timeout id.
+- `useEffect` keyed on `[key, targetCount, enabled, intervalMs, startDelayMs, initialCount]`:
   - `clearTimeout` any existing timer.
   - If `!enabled` or `prefers-reduced-motion`: set visible to `targetCount`, return.
-  - If `flushKey` changed (and the previous run had a timer in flight): set visible to `targetCount` immediately, return.
-  - Otherwise: schedule a `setTimeout` chain via a recursive helper that
-    increments visible by 1 every `intervalMs` until it reaches
-    `targetCount`. Use a `startDelayMs` initial delay before the first
-    increment (used for round-robin staggering across seats).
+  - Reset visible to `initialCount` (the new key may have changed the round or animation).
+  - If `targetCount <= initialCount`: visible is already at target, return.
+  - Otherwise: schedule a `setTimeout` chain that increments visible by 1
+    every `intervalMs`, with an initial `startDelayMs` before the first
+    increment, until visible reaches `targetCount`. Implemented as a
+    recursive helper (`scheduleNext()`) so each step has a single
+    `setTimeout` (and is individually cancelable).
 - Cleanup: `clearTimeout` on unmount or before re-running the effect.
 
 **Two call sites (semantic):**
 
 ```ts
-// PlayerSeat, per hand, for the initial deal
-const visibleCount = useStaggeredReveal(
+// PlayerSeat / DealerArea for the initial deal.
+// Starts at 0, ramps to the hand's full card count.
+const dealVisibleCount = useStaggeredReveal(
   hand.cards.length,
-  `${roundNumber}:${seatId}:${handIndex}`,
+  `${roundNumber}:deal:${handKey}`,        // handKey = seatId for players, 'dealer' for the dealer
   150,
-  { enabled: roundNumber > lastSeen, flushKey: phase, startDelayMs: seatIndex * 150 },
+  {
+    initialCount: 0,
+    enabled: roundNumber > (lastSeen ?? 0),
+    startDelayMs: dealPosition * 150,       // dealPosition: 0 for first non-empty player, 1 for second, etc.; =nonEmptyPlayerCount for the dealer
+  },
 );
 
-// DealerArea, for the staggered reveal
-const visibleDealerCount = useStaggeredReveal(
+// DealerArea for the staggered reveal.
+// Starts at 1 (the upcard is already visible) and ramps to the dealer's
+// final card count, one card every 400ms. The hole card (cards[1]) mounts
+// fresh on the reveal key change with the rotateY animation.
+const revealVisibleCount = useStaggeredReveal(
   dealer.cards.length,
-  `${roundNumber}:dealer`,
+  `${roundNumber}:reveal`,
   400,
-  { enabled: roundNumber > lastSeen, flushKey: phase },
+  {
+    initialCount: 1,
+    enabled: roundNumber > (lastSeen ?? 0),
+  },
 );
 ```
+
+The deal and reveal use **separate calls** (not a single shared call
+with a `flushKey`). The two animations are independent: deal plays once
+per round on `phase = 'dealing'`, reveal plays once per round on
+`phase = 'dealer_turn'`. Each call's `key` captures its own animation
+boundary, so no flush logic is needed — a phase change triggers a key
+change, which resets the visible count for the new animation.
 
 ### New: `client/src/lib/usePrefersReducedMotion.ts`
 
@@ -333,95 +358,146 @@ import { useStaggeredReveal } from '../lib/useStaggeredReveal';
 
 // ... existing styled components unchanged ...
 
-export function HandView({ hand, label, isDealer = false }: { hand: Hand; label?: string; isDealer?: boolean }) {
-  const roundNumber = useSelector((s) => s.game.state?.roundNumber);
-  const phase = useSelector((s) => s.game.state?.phase);
-  const lastSeen = useSelector((s) => s.animation.lastSeenRoundNumber);
-  const seatId = isDealer ? 'dealer' : (useSelector(...).seatId ?? '');  // per-hand key
-  const seatIndex = isDealer ? 0 : (useSelector(...).seatIndex);
+type HandViewProps = {
+  hand: Hand;
+  label?: string;
+  isDealer?: boolean;
+  handKey: string;        // 'dealer' for dealer; `${seatId}:${handIndex}` for player hands
+  dealPosition: number;   // 0-based position in the deal order (round-robin)
+};
 
-  const targetCount = isDealer
-    ? (phase === 'dealer_turn' || phase === 'settled' ? dealer.cards.length : 2)  // hole card is hidden during dealing/player_turn
-    : hand.cards.length;
+export function HandView({ hand, label, isDealer = false, handKey, dealPosition }: HandViewProps) {
+  const phase = useSelector((s: RootState) => s.game.state?.phase);
+  const roundNumber = useSelector((s: RootState) => s.game.state?.roundNumber);
+  const lastSeen = useSelector((s: RootState) => s.animation.lastSeenRoundNumber);
 
-  const visibleCount = useStaggeredReveal(
-    targetCount,
-    `${roundNumber}:${seatId}`,
-    isDealer ? 400 : 150,
-    { enabled: roundNumber > (lastSeen ?? 0), flushKey: phase, startDelayMs: isDealer ? 0 : seatIndex * 150 },
+  // Whether this round's deal should animate. False on reconnect.
+  const isNewRound = roundNumber !== null && roundNumber > (lastSeen ?? 0);
+
+  // Deal animation: ramps 0 → hand.cards.length, 150ms per step.
+  const dealVisible = useStaggeredReveal(
+    hand.cards.length,
+    `${roundNumber ?? 'init'}:deal:${handKey}`,
+    150,
+    { initialCount: 0, enabled: isNewRound, startDelayMs: dealPosition * 150 },
   );
 
-  const t = handTotal(hand, visibleCount);  // CHANGED: handTotal accepts an optional visibleCount to suppress "Showing N" / total until cards are visible
+  // Dealer reveal animation: ramps 1 → dealer.cards.length, 400ms per step.
+  // Only used by the dealer. The hole card's mount key includes the hole's
+  // "hidden" state, so it re-mounts on the deal→reveal transition with the
+  // rotateY animation.
+  const revealVisible = isDealer
+    ? useStaggeredReveal(
+        hand.cards.length,
+        `${roundNumber ?? 'init'}:reveal`,
+        400,
+        { initialCount: 1, enabled: isNewRound },
+      )
+    : dealVisible;
+
+  // Which "visible count" applies right now:
+  // - During dealing/player_turn, use dealVisible (deal animation in progress or completed).
+  // - During dealer_turn/settled (and the dealer hand), use revealVisible (reveal animation).
+  // - For player hands during dealer_turn/settled, use dealVisible (no animation; their cards were already dealt).
+  const visibleCount = isDealer && (phase === 'dealer_turn' || phase === 'settled')
+    ? revealVisible
+    : dealVisible;
+
+  const t = handTotal(hand);
+
+  // The dealer's hole card is "hidden" (face-down) during dealing/player_turn
+  // and revealed (face-up) from dealer_turn onward. The motion.div's key
+  // includes this boolean so it re-mounts with the rotateY animation on the
+  // transition.
+  const holeHidden = isDealer && (phase === 'dealing' || phase === 'player_turn' || phase === null);
+
   return (
     <div>
       {label && <Label>{label}</Label>}
       <HandRow $isDealer={isDealer}>
         <AnimatePresence>
-          {hand.cards.slice(0, visibleCount).map((c, i) => (
-            <motion.div
-              key={`${roundNumber}-${seatId}-${i}`}
-              layout
-              data-testid="card"
-              initial={isDealer && i === 1
-                ? { scale: 0, opacity: 0, rotateY: 180 }
-                : { scale: 0, opacity: 0 }}
-              animate={isDealer && i === 1
-                ? { scale: 1, opacity: 1, rotateY: 0 }
-                : { scale: 1, opacity: 1 }}
-              exit={{ scale: 0, opacity: 0 }}
-              transition={{ duration: isDealer && i === 1 ? 0.5 : 0.18, ease: 'easeOut' }}
-              style={{ transformStyle: 'preserve-3d' }}
-            >
-              <CardView card={c} />
-            </motion.div>
-          ))}
+          {hand.cards.slice(0, visibleCount).map((c, i) => {
+            const isHole = isDealer && i === 1;
+            const cardKey = isHole
+              ? `${roundNumber ?? 'init'}-${handKey}-${i}-${holeHidden ? 'hidden' : 'shown'}`
+              : `${roundNumber ?? 'init'}-${handKey}-${i}`;
+            return (
+              <motion.div
+                key={cardKey}
+                layout
+                data-testid={isHole ? (holeHidden ? 'card-back' : 'card-front') : 'card'}
+                data-card-index={i}
+                initial={isHole && !holeHidden
+                  ? { scale: 0.4, opacity: 0, rotateY: 180 }
+                  : { scale: 0, opacity: 0 }}
+                animate={isHole && !holeHidden
+                  ? { scale: 1, opacity: 1, rotateY: 0 }
+                  : { scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                transition={{ duration: isHole && !holeHidden ? 0.5 : 0.18, ease: 'easeOut' }}
+                style={{ transformStyle: 'preserve-3d' }}
+              >
+                <CardView card={c} />
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
-        {visibleCount > 0 && <Total $hidden={t.hasHidden} $blackjack={t.isBlackjack} $bust={t.isBust}>
+        <Total $hidden={t.hasHidden} $blackjack={t.isBlackjack} $bust={t.isBust}>
           {t.hasHidden && <HiddenPrefix>Showing</HiddenPrefix>}
           {t.total}
-        </Total>}
+        </Total>
       </HandRow>
     </div>
   );
 }
 ```
 
-**`handTotal` change:** the existing function
-(`client/src/lib/handTotal.ts`) is called with the full `hand.cards`. We
-add an optional second parameter `visibleCount?: number`; if provided and
-`< hand.cards.length`, the function returns `{ total: 0, hasHidden: true,
-isBlackjack: false, isBust: false }` (i.e., the total is suppressed
-until the deal is complete). This avoids flashing a wrong total during
-the staggered deal.
+Notes on the design:
 
-For the dealer during `player_turn`: `handTotal` already returns
-`hasHidden: true` and computes the visible-card total — no change needed.
-The new `visibleCount` parameter only matters for the deal phase.
+- `handTotal` is unchanged. The existing function already returns
+  `hasHidden: true` and computes the visible-card total when a hidden
+  card is present. During the deal, the total is `Showing <N>` (the
+  visible-card total), which is the correct visible behavior.
+- The dealer's `hand.cards` is always 2 elements during `dealing` /
+  `player_turn` (one real card and `{hidden: true}`). The hook ramps
+  to 2; the hole card is rendered as a `CardBack` (face-down) because
+  its data is `{hidden: true}`. On `dealer_turn`, the data becomes 2+
+  real cards; the hook ramps from 1 to that count, and the hole card
+  remounts with the rotateY animation because its key includes
+  `holeHidden` which flips from `true` to `false`.
+- For non-dealer hands during `dealer_turn`: `visibleCount` is
+  `dealVisible` (no animation; their cards are already dealt). The
+  `hand.cards` for player hands is stable during dealer play (no
+  animation needed).
+- The hook is called unconditionally (rules of hooks); the `isDealer`
+  branch just chooses which call to make.
 
 ### Modified: `client/src/components/DealerArea.tsx`
 
-The `DealerArea` no longer needs the `dealer` data passed in — it now
-reads from the same `useStaggeredReveal` machinery via `HandView`. The
-component itself stays small and only renders the label + `HandView` with
-`isDealer`.
+Pass `handKey='dealer'` and `dealPosition={nonEmptyPlayerCount}` (the
+dealer's position in the round-robin is "after all seated players") to
+`HandView`. Everything else stays the same.
 
 ### Modified: `client/src/components/PlayerSeat.tsx`
 
-Reads `seatIndex` from props (passed in by `TableView` based on the
-`players` array index). The hook's `startDelayMs = seatIndex * 150`
-provides the round-robin offset.
+Pass `handKey=${seat.id}:${handIndex}` and `dealPosition={playerDealPosition}`
+(the player's 0-based position in the deal order — first non-empty seat
+is 0, second is 1, etc.) to `HandView` for each hand. Multiple hands
+(splits) all share the same `dealPosition` because they deal together.
 
 ### Modified: `client/src/components/TableView.tsx`
 
-- Wraps the existing `TableSurface` children in `<MotionConfig reducedMotion="user">` from framer-motion. This is a one-line wrapper; it tells framer-motion to honor the user's reduced-motion preference automatically.
-- Renders `<DealAnimationDriver />` once (e.g., as a sibling of `<ResultOverlay />`).
-- Passes `seatIndex` to each `PlayerSeatView` (currently absent — currently
-  it just passes `seat` and `isActive`).
+- Wraps the existing `TableSurface` children in
+  `<MotionConfig reducedMotion="user">` from framer-motion. One-line
+  wrapper; tells framer-motion to honor the user's reduced-motion
+  preference automatically.
+- Renders `<DealAnimationDriver />` once (e.g., as a sibling of
+  `<ResultOverlay />`).
+- Pre-computes the `dealPosition` for each non-empty player seat
+  (0, 1, 2, ...) and passes it to `PlayerSeatView`. Passes
+  `nonEmptyPlayerCount` to `DealerArea` as the dealer's `dealPosition`.
 
-### Modified: `client/src/lib/handTotal.ts`
-
-Add the optional `visibleCount` parameter. Default behavior (when omitted)
-matches today. See `HandView` description above for the suppression rule.
+No changes to `handTotal`.
 
 ### Theme
 
@@ -455,25 +531,33 @@ The "is this a new round?" check happens at the hook's call site via the
 `enabled` parameter:
 
 ```ts
-const enabled = roundNumber > (lastSeen ?? 0);
+const isNewRound = roundNumber !== null && roundNumber > (lastSeen ?? 0);
 ```
 
 - **First-time viewer, new round** (`lastSeen === null` or
-  `lastSeen < roundNumber`): `enabled = true`. Hook plays the deal
-  animation.
+  `lastSeen < roundNumber`): `isNewRound = true`. Hook plays the deal
+  animation and the dealer reveal.
 - **Reconnect to a mid-round state** (`lastSeen === roundNumber`):
-  `enabled = false`. Hook returns `targetCount` immediately.
-- **Reconnect to a new round** (impossible without a state change, but
-  defensively handled): the new `roundNumber` is greater than
-  `lastSeen`, animation plays.
+  `isNewRound = false`. Hook returns `targetCount` immediately for both
+  animations.
+- **First-time viewer joining mid-round** (e.g., a player joins during
+  `player_turn` and never saw the deal): `lastSeen` is `null`, so
+  `isNewRound = true`. The deal animation plays once for them, then
+  `lastSeen` updates. This is the same behavior a player who joined
+  before the deal gets, just delayed.
 
-The `flushKey = phase` parameter is a separate concern: if the phase
-changes mid-animation (e.g., server's `dealingComplete` timer fires
-before the local animation finishes), the hook snaps to `targetCount`
-so the action panel and final state are immediately consistent. This
-also makes mid-deal disconnects recover cleanly — the reconnecting
-client sees whatever state the server currently has, with the hook
-behaving correctly per the rules above.
+The `DealAnimationDriver` dispatches `roundSeen(roundNumber)` when
+`phase === 'player_turn'` (the moment the deal is complete server-side
+and the cards are settled). For a reconnecting player whose `lastSeen`
+is already `=== roundNumber`, this dispatch is a no-op.
+
+If the server's `dealingComplete` timer fires before the local deal
+animation has finished, the client enters `player_turn` with the deal
+animation still in progress. The hook's `targetCount` is unchanged, so
+the animation completes naturally; the action panel becomes available
+the moment the phase flips. The total is already accurate (the
+`handTotal` function handles the in-progress deal correctly), so the
+player can act as soon as the server says it's their turn.
 
 ## Testing
 
@@ -496,28 +580,35 @@ Three new test cases, plus one small edit:
 
 Use `vi.useFakeTimers()` and `@testing-library/react`'s `renderHook`.
 
-1. Initial render with `targetCount = 3, intervalMs = 100` returns `0`.
+1. Initial render with `targetCount = 3, intervalMs = 100, initialCount = 0` returns `0`.
 2. After `vi.advanceTimersByTime(100)`, returns `1`. After 300ms, returns `3`.
-3. Changing `key` resets to `0` and re-staggered.
+3. Changing `key` resets to `initialCount` and re-staggered.
 4. `targetCount` decreasing from 3 to 1 snaps to `1` immediately.
 5. `usePrefersReducedMotion` returning `true` (mocked) → returns
    `targetCount` on first render; no timers scheduled.
 6. `enabled = false` → returns `targetCount` immediately.
 7. Unmount mid-stagger → no late state update fires (no warning).
-8. `flushKey` change mid-stagger → snaps to `targetCount`.
+8. `initialCount = 1, targetCount = 3` → first render returns `1`;
+   after 400ms returns `2`; after 800ms returns `3`.
+9. `startDelayMs = 200, targetCount = 3, intervalMs = 100` → first
+   render returns `0`; after 200ms returns `1`; after 300ms returns `2`;
+   after 400ms returns `3`.
 
 ### Client unit (`client/test/components/HandView.spec.tsx`, new)
 
 Render `HandView` inside a `Provider` with a populated mock store.
 
 1. `lastSeenRoundNumber === roundNumber` → all cards render on first
-   render, no animation.
-2. `lastSeenRoundNumber < roundNumber` → with fake timers, advancing
-   time reveals cards one at a time.
+   render, no animation (the hook's `enabled` is `false`).
+2. `lastSeenRoundNumber < roundNumber`, `phase = 'dealing'` → with
+   fake timers, advancing 150ms intervals reveals cards one at a time.
 3. Mock `usePrefersReducedMotion` to `true` → all cards present on
    first render regardless of `lastSeen`.
-4. `phase` changes from `dealing` to `player_turn` mid-stagger → flush
-   (all cards present immediately).
+4. Dealer hand: `phase = 'player_turn'` → hole card renders as
+   `CardBack` (face-down). Switching `phase` to `'dealer_turn'` →
+   hole card re-mounts with `data-testid="card-front"`.
+5. Dealer hand: `phase = 'dealer_turn'`, dealer has 3 cards → with
+   fake timers, the second and third cards appear at 400ms and 800ms.
 
 ### E2E (`client/e2e/animations.spec.ts`, new)
 
@@ -563,13 +654,18 @@ Follow the existing two-tab Playwright pattern.
 - `server/src/gateway/game.gateway.ts` — extend `scheduleAutoAdvance`,
   `fireAutoAdvance`, `broadcastAll`, `attachPhaseEndsAt`.
 - `server/test/state-machine.spec.ts` — 3 new cases, 1 small edit.
-- `client/src/lib/handTotal.ts` — accept optional `visibleCount`.
-- `client/src/components/HandView.tsx` — AnimatePresence + motion.div.
-- `client/src/components/DealerArea.tsx` — pass `isDealer` and read
-  state from selectors (or unchanged; mostly a passthrough).
-- `client/src/components/PlayerSeat.tsx` — accept and use `seatIndex`.
+- `client/src/lib/handTotal.ts` — **no changes**; existing function already
+  handles hidden cards correctly.
+- `client/src/components/HandView.tsx` — AnimatePresence + motion.div;
+  accept `handKey` and `dealPosition` props; per-card `data-testid` and
+  `data-card-index` for tests; dealer's hole card key includes the
+  hidden state to trigger the rotateY animation.
+- `client/src/components/DealerArea.tsx` — pass `handKey='dealer'` and
+  `dealPosition={nonEmptyPlayerCount}` to `HandView`.
+- `client/src/components/PlayerSeat.tsx` — pass `handKey` and
+  `dealPosition` to each rendered `HandView`.
 - `client/src/components/TableView.tsx` — add `<MotionConfig>`,
-  `<DealAnimationDriver />`, pass `seatIndex`.
+  `<DealAnimationDriver />`, pre-compute and pass `dealPosition`.
 - `client/src/store/index.ts` — register the `animation` reducer.
 
 ## Out of scope / open questions
