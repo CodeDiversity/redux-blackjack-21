@@ -47,15 +47,23 @@ export function Table() {
       });
     };
 
+    // Reset the ref on disconnect so the next reconnect re-emits. Without
+    // this, an auto-reconnect (e.g. after a network blip) leaves the
+    // server's room.seats entry pointing at the old socketId, and the
+    // reconnected client gets NOT_YOUR_TURN on its next bet:place.
+    const onDisconnect = () => { emittedForCodeRef.current = null; };
+
     // Try once on mount; the ref guard makes this a no-op on subsequent
-    // connect/reconnect events for the same code, but a code change re-arms.
+    // connect events for the same code, but a code change re-arms.
     tryResume();
     socket.on('connect', tryResume);
     socket.on('reconnect', tryResume);
+    socket.on('disconnect', onDisconnect);
 
     return () => {
       socket.off('connect', tryResume);
       socket.off('reconnect', tryResume);
+      socket.off('disconnect', onDisconnect);
     };
   }, [code, dispatch]);
 

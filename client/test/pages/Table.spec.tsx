@@ -119,4 +119,26 @@ describe('<Table> reconnect flow', () => {
     expect(promptSpy).not.toHaveBeenCalled();
     promptSpy.mockRestore();
   });
+
+  it('re-emits room:resume after a socket disconnect (so the server re-binds the seat)', () => {
+    // Regression: socket auto-reconnect (e.g. after a network blip) used to
+    // skip the room:resume re-emit because the ref guard made reconnect a
+    // no-op. The server's room.seats entry then kept the old socketId and
+    // the reconnected client got NOT_YOUR_TURN on its next bet:place.
+    localStorage.setItem('bj21.seat.ABCDE', 'tok-1');
+    renderAt('/room/ABCDE');
+    const initialResumeCalls = mockSocket.emit.mock.calls.filter((c) => c[0] === 'room:resume');
+    expect(initialResumeCalls.length).toBe(1);
+
+    // Simulate a disconnect+reconnect cycle (e.g. network blip).
+    act(() => {
+      (mockSocket._listeners['disconnect'] ?? []).forEach((h) => h('transport close'));
+      (mockSocket._listeners['connect'] ?? []).forEach((h) => h());
+    });
+
+    const afterReconnectCalls = mockSocket.emit.mock.calls.filter((c) => c[0] === 'room:resume');
+    expect(afterReconnectCalls.length).toBe(2);
+    // The re-emit must reuse the same stored token.
+    expect(afterReconnectCalls[1]).toEqual(['room:resume', { roomId: 'ABCDE', seatToken: 'tok-1' }, expect.any(Function)]);
+  });
 });
