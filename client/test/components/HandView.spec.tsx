@@ -24,7 +24,7 @@ function makeStore(initial?: Partial<{ gameState: GameState | null; lastSeen: nu
     preloadedState: {
       game: { state: initial?.gameState ?? null, lastResult: null },
       animation: { lastSeenRoundNumber: initial?.lastSeen ?? null },
-    } as any,
+    },
   });
 }
 

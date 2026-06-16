@@ -19,10 +19,10 @@ function makeSeat(overrides: Partial<PlayerSeat> = {}): PlayerSeat {
   };
 }
 
-function renderSeat(props: { seat: PlayerSeat; isActive: boolean; isMe: boolean }) {
+function renderSeat(props: { seat: PlayerSeat; isActive: boolean; isMe: boolean; dealPosition?: number }) {
   return render(
     <ThemeProvider theme={theme}>
-      <PlayerSeatView {...props} />
+      <PlayerSeatView {...props} dealPosition={props.dealPosition ?? 0} />
     </ThemeProvider>,
   );
 }
