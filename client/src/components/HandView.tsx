@@ -4,6 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { Hand, CardSlot, Card } from '../shared/types';
 import { handTotal } from '../lib/handTotal';
 import { useStaggeredReveal } from '../lib/useStaggeredReveal';
+import {
+  DEAL_CARD_INTERVAL_MS,
+  DEALER_REVEAL_CARD_INTERVAL_MS,
+  CARD_ENTRY_DURATION_S,
+  HOLE_CARD_FLIP_DURATION_S,
+  dealPositionToStartDelayMs,
+} from '../lib/animation-timings';
 import type { RootState } from '../store';
 
 const HandRow = styled.div<{ $isDealer: boolean }>`
@@ -123,19 +130,19 @@ export function HandView({
 
   const isNewRound = roundNumber !== null && roundNumber !== undefined && roundNumber > (lastSeen ?? 0);
 
-  // Deal animation: 0 → hand.cards.length, 150ms per step.
+  // Deal animation: 0 → hand.cards.length, DEAL_CARD_INTERVAL_MS per step.
   const dealVisible = useStaggeredReveal(
     hand.cards.length,
     `${roundNumber ?? 'init'}:deal:${handKey}`,
-    150,
-    { initialCount: 0, enabled: isNewRound, startDelayMs: dealPosition * 150 },
+    DEAL_CARD_INTERVAL_MS,
+    { initialCount: 0, enabled: isNewRound, startDelayMs: dealPositionToStartDelayMs(dealPosition) },
   );
 
-  // Dealer reveal: 1 → dealer.cards.length, 400ms per step. Only meaningful for the dealer.
+  // Dealer reveal: 1 → dealer.cards.length, DEALER_REVEAL_CARD_INTERVAL_MS per step. Only meaningful for the dealer.
   const revealVisible = useStaggeredReveal(
     hand.cards.length,
     `${roundNumber ?? 'init'}:reveal:${handKey}`,
-    400,
+    DEALER_REVEAL_CARD_INTERVAL_MS,
     { initialCount: 1, enabled: isDealer ? isNewRound : false },
   );
 
@@ -171,7 +178,7 @@ export function HandView({
                   ? { scale: 1, opacity: 1, rotateY: 0 }
                   : { scale: 1, opacity: 1 }}
                 exit={{ scale: 0, opacity: 0 }}
-                transition={{ duration: isHole && !holeHidden ? 0.5 : 0.18, ease: 'easeOut' }}
+                transition={{ duration: isHole && !holeHidden ? HOLE_CARD_FLIP_DURATION_S : CARD_ENTRY_DURATION_S, ease: 'easeOut' }}
                 style={{ transformStyle: 'preserve-3d' }}
               >
                 <CardView card={c} />
