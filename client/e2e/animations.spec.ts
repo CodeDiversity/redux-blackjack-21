@@ -29,7 +29,8 @@ test('deal animation runs, dealer reveal completes, reconnect skips deal', async
 
   // Wait for the deal animation to complete. The action panel only renders
   // for the active player, so we wait for the host (seat 0) to be in
-  // player_turn. The bet deadline (10s) + dealing (1.5s) must elapse first.
+  // player_turn. Both the bet deadline and the dealing phase must elapse
+  // first; the 20_000ms timeout below is the source of truth.
   await hostPage.waitForSelector('.action-panel', { timeout: 20_000 });
 
   // Both players should have their cards rendered.
