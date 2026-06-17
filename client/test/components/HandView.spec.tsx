@@ -77,9 +77,9 @@ describe('<HandView> animations', () => {
     const store = makeStore({ gameState: makeState({ roundNumber: 5, phase: 'dealing' }), lastSeen: 4 });
     renderHandView({ hand: hand(cards) }, store);
     expect(screen.queryAllByTestId('card').length).toBe(0);
-    act(() => { vi.advanceTimersByTime(150); });
+    act(() => { vi.advanceTimersByTime(250); });
     expect(screen.queryAllByTestId('card').length).toBe(1);
-    act(() => { vi.advanceTimersByTime(150); });
+    act(() => { vi.advanceTimersByTime(250); });
     expect(screen.queryAllByTestId('card').length).toBe(2);
   });
 
