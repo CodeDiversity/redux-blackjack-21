@@ -18,17 +18,19 @@ To re-tune, a developer has to edit the file, restart the dev server, and trust 
 
 ## Goal
 
-Slow the card animations by roughly 50–60% across the board and pull the values into a single named-exports file so future re-tunes are one-file edits. Keep the change scoped — no UI, no per-user settings, no API changes.
+Slow the card animations and pull the values into a single named-exports file so future re-tunes are one-file edits. Keep the change scoped — no UI, no per-user settings, no API changes.
 
 New values:
 
-| Constant | Old | New |
-|---|---|---|
-| Deal per-card interval | 150ms | 250ms |
-| Dealer reveal per-card interval | 400ms | 500ms |
-| Card entry transition | 0.18s | 0.25s |
-| Hole card 3D flip | 0.5s | 0.6s |
-| Server `DEALING_DURATION_MS` | 1_500 | 2_000 |
+| Constant | Old | New | Change |
+|---|---|---|---|
+| Deal per-card interval | 150ms | 250ms | +67% |
+| Dealer reveal per-card interval | 400ms | 500ms | +25% |
+| Card entry transition | 0.18s | 0.25s | +39% |
+| Hole card 3D flip | 0.5s | 0.6s | +20% |
+| Server `DEALING_DURATION_MS` | 1_500 | 2_000 | +33% |
+
+The deal per-card interval gets the largest bump (the user called this out as feeling the most rushed); the other values get moderate bumps to keep the animation feeling cohesive rather than just slower-in-one-spot.
 
 ## Non-Goals
 
@@ -45,7 +47,7 @@ New values:
 |---|---|---|
 | Config surface | New `client/src/lib/animation-timings.ts` with named exports | Per user. Single file, single source of truth, no UI, no API change. |
 | Helper for round-robin math | `dealPositionToStartDelayMs(pos)` exported from the same file | The `pos * interval` expression is the one place the constant and the position variable meet; a named helper makes the call site readable and isolates the formula. |
-| Server config | `DEALING_DURATION_MS` bumped to `2_000` in `server/src/config.ts` | The 500ms headroom over the longest possible deal animation (5 players × 250ms + 250ms = 1500ms) keeps the deal visible. If a future tune pushes the deal longer, the server constant must move with it. |
+| Server config | `DEALING_DURATION_MS` bumped to `2_000` in `server/src/config.ts` | The server window must be `>=` the longest possible client deal animation duration. With 5 seated players, that's `(5 + 1) * 250ms + 250ms` = 1750ms; the 2000ms server window leaves 250ms of headroom. If a future tune pushes the deal longer, the server constant must move with it. |
 | Server-client coupling | One-line comment in both `animation-timings.ts` and `server/src/config.ts` cross-referencing the other | Future maintainer sees the constraint without having to derive it. |
 | Test updates | `HandView.spec.tsx` "renders cards progressively" advances `250ms` instead of `150ms`; e2e `action-panel` timeout bumps from 15s to 20s | Mechanical. Hook tests use generic intervals, no change. |
 
@@ -67,7 +69,15 @@ server/src/
 └── game/state-machine.ts           ← unchanged
 ```
 
-Server and client stay in sync via the comment cross-reference: the `DEALING_DURATION_MS` constant must be `>=` the longest possible client deal animation. The longest case (5 seated players, 2 cards each) is `(nonEmptyPlayerCount + 1) * DEAL_CARD_INTERVAL_MS` = `6 * 250 = 1500ms`. The 2000ms server window leaves 500ms headroom.
+Server and client stay in sync via the comment cross-reference: the `DEALING_DURATION_MS` constant must be `>=` the longest possible client deal animation. The last card to appear is the dealer's 2nd card; it lands at `(nonEmptyPlayerCount + 1) * DEAL_CARD_INTERVAL_MS` and its entry transition takes `CARD_ENTRY_DURATION_S` more. So the deal animation finishes at:
+
+```
+(nonEmptyPlayerCount + 1) * DEAL_CARD_INTERVAL_MS + CARD_ENTRY_DURATION_S
+= (5 + 1) * 250 + 250
+= 1750ms (for a full 5-player table)
+```
+
+The server's 2000ms `DEALING_DURATION_MS` leaves 250ms of headroom — enough that the entry transition always finishes before the action panel appears.
 
 ## Client changes
 
