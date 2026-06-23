@@ -4,6 +4,7 @@ import { lobbyReducer } from './lobby.slice';
 import { gameReducer } from './game.slice';
 import { uiReducer } from './ui.slice';
 import { animationReducer } from './animation.slice';
+import { playerReducer } from './player.slice';
 import { socketMiddleware } from '../middleware/socket.middleware';
 import { getSocket } from '../socket/client';
 
@@ -14,6 +15,7 @@ export const store = configureStore({
     game: gameReducer,
     ui: uiReducer,
     animation: animationReducer,
+    player: playerReducer,
   },
   middleware: (getDefault) => getDefault().concat(socketMiddleware(getSocket)),
 });
