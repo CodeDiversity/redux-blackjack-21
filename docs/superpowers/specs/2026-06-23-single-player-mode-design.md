@@ -75,7 +75,7 @@ function hintText(seatedCount: number): string {
 ### Files touched
 
 - `client/src/components/StartButton.tsx` — the two edits above.
-- `client/src/components/StartButton.test.tsx` — add or adjust cases so
+- `client/test/components/StartButton.spec.tsx` — add or adjust cases so
   the solo-host case is covered:
   - host with 0 seats → button disabled, hint "Waiting for players to join…"
   - host with 1 seat → button enabled, no hint
