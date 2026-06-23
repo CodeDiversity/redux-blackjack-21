@@ -9,3 +9,4 @@ coverage/
 .playwright/
 test-results/
 playwright-report/
+server/data/

@@ -16,4 +16,5 @@ export const Config = {
   SETTLE_PAUSE_MS: 3_000,
   BET_DEADLINE_MS: 10_000,
   DEALING_DURATION_MS: 2_000,  // CHANGED from 1_500. Must be >= the longest possible client deal animation: (nonEmptyPlayerCount + 1) * client DEAL_CARD_INTERVAL_MS + CARD_ENTRY_DURATION_S. See client/src/lib/animation-timings.ts.
+  DB_PATH: process.env.DB_PATH ?? 'data/blackjack.db',
 } as const;
