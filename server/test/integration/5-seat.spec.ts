@@ -142,3 +142,67 @@ describe('gateway integration: 5-player full round', () => {
     for (const s of players) s.disconnect();
   }, 45_000);
 });
+
+describe('hand history row writes on settlement', () => {
+  let app: INestApplication;
+  let dir: string;
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'bj21-5seat-history-'));
+    process.env.DB_PATH = join(dir, 'blackjack.db');
+    jest.resetModules();
+    const { AppModule } = require('../../src/app.module');
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    app.enableCors({ origin: '*', credentials: true });
+    await app.listen(0);
+  });
+
+  afterAll(async () => {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes one row per non-empty hand after settle', async () => {
+    const url = `http://localhost:${(app.getHttpServer().address() as any).port}`;
+    const playerId = '00000000-0000-4000-8000-000000000099';
+    const sock = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId } });
+    await new Promise<void>((r) => sock.on('connect', () => r()));
+
+    // Listen for the room code from the create callback.
+    const code: string = await new Promise((resolve) => {
+      sock.emit('room:create', { name: 'Alice' }, (resp: any) => resolve(resp.roomId));
+    });
+
+    // Wait for the betting phase. Emit round:ready first so the server transitions
+    // out of lobby. Pre-arm listener so we don't miss the resulting event.
+    const bettingPromise = listen<GameState>(sock, 'game:state', (s) => s.phase === 'betting');
+    sock.emit('round:ready');
+    await bettingPromise;
+
+    // Place a bet and start dealing.
+    sock.emit('bet:place', { amount: 50 });
+    await listen<GameState>(sock, 'game:state', (s) => s.phase === 'dealing');
+
+    // Wait for player_turn, then stand until settled. Pre-arm the settled
+    // listener so we don't miss the rapid transition that fires as soon as
+    // the active seat's stand is accepted.
+    await listen<GameState>(sock, 'game:state', (s) => s.phase === 'player_turn');
+    const settledPromise = listen<GameState>(sock, 'game:state', (s) => s.phase === 'settled');
+    for (let i = 0; i < 4; i++) {
+      await new Promise<void>((r) => setTimeout(r, 100));
+      sock.emit('hand:stand', { handIndex: 0 });
+    }
+    await settledPromise;
+
+    // Assert: a row was written for this player.
+    // Use require() (not top-of-file import) so we share the module instance
+    // that the gateway loaded after jest.resetModules().
+    const { getRecentHands } = require('../../src/storage/hands.repository');
+    const rows = getRecentHands(playerId, 50, 0);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]).toMatchObject({ player_id: playerId, bet_amount: 50 });
+
+    sock.disconnect();
+  }, 20_000);
+});

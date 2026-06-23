@@ -15,7 +15,9 @@ import { applyAction, GameError } from '../game/state-machine';
 import { makeError } from '../shared/errors';
 import { Config } from '../config';
 import { readPlayerIdFromHandshake } from '../player/player-identity';
-import type { GameState, LobbyState, ServerEvent } from '../shared/types';
+import { recordHand, type Outcome } from '../storage/hands.repository';
+import { handTotal } from '../game/hand';
+import type { Card, GameState, LobbyState, ServerEvent } from '../shared/types';
 
 @WebSocketGateway({ cors: { origin: 'http://localhost:5173', credentials: true } })
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy {
@@ -286,7 +288,53 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (lobby) this.server.to(roomId).emit('lobby:state', lobby);
     const publicState = this.attachPhaseEndsAt(roomId, state);
     this.server.to(roomId).emit('game:state', this.publicState(publicState));
+    if (state.phase === 'settled') this.writeHandRows(roomId, state);
     if (state.phase === 'settled' && state.lastResult) this.server.to(roomId).emit('round:result', state.lastResult);
+  }
+
+  private writeHandRows(roomId: string, state: GameState): void {
+    if (!state.lastResult) return;
+    for (const player of state.players) {
+      if (player.status === 'empty' || player.status === 'sitting_out') continue;
+      const playerId = this.rooms.getPlayerIdForSeat(roomId, player.id);
+      if (!playerId) continue;
+      for (let handIndex = 0; handIndex < player.hands.length; handIndex++) {
+        const hand = player.hands[handIndex];
+        if (hand.cards.length === 0) continue;
+        // Find the payout for this seat+hand via lastResult.payouts. The state machine
+        // emits one payout per player per round (delta is summed across split sub-hands),
+        // so we map that single payout to each non-empty sub-hand proportionally.
+        const payout = state.lastResult.payouts.find((p) => p.seatId === player.id);
+        if (!payout) continue;
+        // The state machine uses 'lose' (not 'loss') in payout reasons; normalize to
+        // the hand-history outcome enum, which uses 'loss'.
+        const outcome: Outcome = payout.reason === 'lose' ? 'loss' : payout.reason;
+        const subDelta = payout.reason === 'push' ? 0
+          : payout.reason === 'blackjack' ? Math.floor(hand.bet * 1.5)
+          : payout.reason === 'win' ? hand.bet
+          : -hand.bet;
+        try {
+          recordHand({
+            player_id: playerId,
+            bet_amount: hand.bet,
+            outcome,
+            net: subDelta,
+            seat_index: state.players.findIndex((p) => p.id === player.id),
+            hand_index: handIndex,
+            is_doubled: hand.doubled ? 1 : 0,
+            player_total: handTotal(hand.cards),
+            dealer_total: handTotal(state.dealer.cards),
+            player_cards: JSON.stringify(hand.cards.filter((c): c is Card => !('hidden' in c))),
+            dealer_cards: JSON.stringify(state.dealer.cards.filter((c): c is Card => !('hidden' in c))),
+            room_code: roomId,
+            round_number: state.roundNumber,
+            created_at: Date.now(),
+          });
+        } catch (e) {
+          this.log.warn(`hand row write failed for seat ${player.id}: ${(e as Error).message}`);
+        }
+      }
+    }
   }
 
   private attachPhaseEndsAt(roomId: string, state: GameState): GameState {
