@@ -1,6 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { io, type Socket } from 'socket.io-client';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { AppModule } from '../src/app.module';
 import { Config } from '../src/config';
 import type { GameState, LobbyState } from '../src/shared/types';
@@ -15,8 +18,13 @@ async function listen<T = any>(socket: Socket, event: string, predicate?: (p: T)
 describe('gateway integration: 2-player full round', () => {
   let app: INestApplication;
   let url: string;
+  let dir: string;
 
   beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'bj21-gwint-'));
+    process.env.DB_PATH = join(dir, 'blackjack.db');
+    jest.resetModules();
+    const { AppModule } = require('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.enableCors({ origin: '*', credentials: true });
@@ -25,11 +33,14 @@ describe('gateway integration: 2-player full round', () => {
     url = `http://localhost:${addr.port}`;
   });
 
-  afterAll(async () => { await app.close(); });
+  afterAll(async () => {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('walks two clients through create → join → bet → deal → stand → stand → settle', async () => {
-    const host = io(url, { transports: ['websocket'], forceNew: true });
-    const guest = io(url, { transports: ['websocket'], forceNew: true });
+    const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
+    const guest = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
     await Promise.all([new Promise<void>((r) => host.on('connect', () => r())), new Promise<void>((r) => guest.on('connect', () => r()))]);
 
     // Register listeners BEFORE emitting to avoid race with synchronous server emit.
@@ -107,7 +118,7 @@ describe('gateway integration: 2-player full round', () => {
   }, 30_000);
 
   it('re-loops the betting phase when 0 players bet by the deadline', async () => {
-    const host = io(url, { transports: ['websocket'], forceNew: true });
+    const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
     await new Promise<void>((r) => host.on('connect', () => r()));
 
     const lobbyPromise = listen<LobbyState>(host, 'lobby:state');
@@ -136,7 +147,7 @@ describe('gateway integration: 2-player full round', () => {
 
   describe('room:resume', () => {
     it('rebinds a returning client to the same seat using the seatToken', async () => {
-      const host = io(url, { transports: ['websocket'], forceNew: true });
+      const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
       await new Promise<void>((r) => host.on('connect', () => r()));
 
       const lobby1 = listen<LobbyState>(host, 'lobby:state');
@@ -149,7 +160,7 @@ describe('gateway integration: 2-player full round', () => {
       expect(created.seatToken).toBeTruthy();
 
       // Simulate a reload: a fresh socket reconnects with the seatToken.
-      const fresh = io(url, { transports: ['websocket'], forceNew: true });
+      const fresh = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
       await new Promise<void>((r) => fresh.on('connect', () => r()));
       const lobby2 = listen<LobbyState>(fresh, 'lobby:state');
       const gameState2 = listen<{ phase: string }>(fresh, 'game:state');
@@ -170,7 +181,7 @@ describe('gateway integration: 2-player full round', () => {
     }, 10_000);
 
     it('emits SEAT_GONE error when the seatToken is unknown', async () => {
-      const host = io(url, { transports: ['websocket'], forceNew: true });
+      const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
       await new Promise<void>((r) => host.on('connect', () => r()));
       const lobby1 = listen<LobbyState>(host, 'lobby:state');
       await new Promise<void>((resolve) => {
@@ -187,7 +198,7 @@ describe('gateway integration: 2-player full round', () => {
 
   describe('disconnect grace period', () => {
     it('keeps the seat in the room after a socket disconnects, so a fresh socket can resume', async () => {
-      const host = io(url, { transports: ['websocket'], forceNew: true });
+      const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
       await new Promise<void>((r) => host.on('connect', () => r()));
 
       const lobby1 = listen<LobbyState>(host, 'lobby:state');
@@ -204,7 +215,7 @@ describe('gateway integration: 2-player full round', () => {
       // Yield so any synchronous (incorrect) leave handler would have run.
       await new Promise((r) => setImmediate(r));
 
-      const fresh = io(url, { transports: ['websocket'], forceNew: true });
+      const fresh = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
       await new Promise<void>((r) => fresh.on('connect', () => r()));
 
       // The fresh socket should be able to resume the original seat using
@@ -226,7 +237,7 @@ describe('gateway integration: 2-player full round', () => {
       // A wrong token must still fail, even if a (different) seat is currently
       // in the grace period from a prior disconnect. Defends against
       // accidentally over-eager cancellation logic.
-      const host = io(url, { transports: ['websocket'], forceNew: true });
+      const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
       await new Promise<void>((r) => host.on('connect', () => r()));
       const lobby1 = listen<LobbyState>(host, 'lobby:state');
       await new Promise<void>((resolve) => {
@@ -240,7 +251,7 @@ describe('gateway integration: 2-player full round', () => {
 
       // A brand-new socket tries to resume with a bogus token in the same
       // room. The seat exists (Alice's), but the token is wrong → SEAT_GONE.
-      const fresh = io(url, { transports: ['websocket'], forceNew: true });
+      const fresh = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000003' } });
       await new Promise<void>((r) => fresh.on('connect', () => r()));
       const err = listen<{ code: string }>(fresh, 'error');
       fresh.emit('room:resume', { roomId, seatToken: 'bogus-during-grace' });

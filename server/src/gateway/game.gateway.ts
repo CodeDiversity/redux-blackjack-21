@@ -14,6 +14,7 @@ import { GameService } from '../game/game.service';
 import { applyAction, GameError } from '../game/state-machine';
 import { makeError } from '../shared/errors';
 import { Config } from '../config';
+import { readPlayerIdFromHandshake } from '../player/player-identity';
 import type { GameState, LobbyState, ServerEvent } from '../shared/types';
 
 @WebSocketGateway({ cors: { origin: 'http://localhost:5173', credentials: true } })
@@ -21,6 +22,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @WebSocketServer() server!: Server;
   private readonly log = new Logger(GameGateway.name);
   private socketToRoom = new Map<string, string>();
+  private socketToPlayerId = new Map<string, string>();
   /**
    * Pending seat removals scheduled after a socket disconnect. Keyed by
    * `${roomId}:${seatId}` so a returning client resuming with the same
@@ -55,11 +57,22 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   ) {}
 
   handleConnection(client: Socket) {
-    this.log.log(`connect ${client.id}`);
+    let playerId: string;
+    try {
+      playerId = readPlayerIdFromHandshake(client.handshake.auth);
+    } catch (e) {
+      this.log.warn(`rejecting ${client.id}: ${(e as Error).message}`);
+      client.emit('error', { code: 'AUTH_REQUIRED', message: 'playerId missing or invalid' });
+      client.disconnect(true);
+      return;
+    }
+    this.socketToPlayerId.set(client.id, playerId);
+    this.log.log(`connect ${client.id} (playerId ${playerId})`);
   }
 
   handleDisconnect(client: Socket) {
     this.log.log(`disconnect ${client.id}`);
+    this.socketToPlayerId.delete(client.id);
     const roomId = this.socketToRoom.get(client.id);
     if (!roomId) return;
 
@@ -146,7 +159,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('room:create')
   onCreate(@ConnectedSocket() client: Socket, @MessageBody() body: { name: string }) {
     if (!body?.name?.trim()) return this.sendError(client, 'NAME_REQUIRED');
-    const { roomId, seatId, seatToken, state } = this.rooms.createRoom(client.id, body.name.trim());
+    const { roomId, seatId, seatToken, state } = this.rooms.createRoom(
+      client.id, body.name.trim(), this.socketToPlayerId.get(client.id)!,
+    );
     // Defensive: clear any pending leave for this brand-new seat (would only
     // fire if somehow a token collided, which UUIDs won't do, but be safe).
     this.cancelPendingLeave(roomId, seatId);
@@ -162,7 +177,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   onJoin(@ConnectedSocket() client: Socket, @MessageBody() body: { roomId: string; name: string }) {
     if (!body?.name?.trim()) return this.sendError(client, 'NAME_REQUIRED');
     try {
-      const { seatId, seatToken, state } = this.rooms.joinRoom(body.roomId, client.id, body.name.trim());
+      const { seatId, seatToken, state } = this.rooms.joinRoom(
+        body.roomId, client.id, body.name.trim(), this.socketToPlayerId.get(client.id)!,
+      );
       this.cancelPendingLeave(body.roomId, seatId);
       this.socketToRoom.set(client.id, body.roomId);
       this.games.ensureShoe(body.roomId, state);
@@ -182,7 +199,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     // can cancel the pending leave using the (unchanged) seatId key.
     const found = this.rooms.findSeatByToken(body.roomId, body.seatToken);
     try {
-      const { seatId, state } = this.rooms.resumeSeat(body.roomId, body.seatToken, client.id);
+      const { seatId, state } = this.rooms.resumeSeat(
+        body.roomId, body.seatToken, client.id, this.socketToPlayerId.get(client.id)!,
+      );
       if (found) this.cancelPendingLeave(body.roomId, found.seatId);
       this.socketToRoom.set(client.id, body.roomId);
       client.join(body.roomId);

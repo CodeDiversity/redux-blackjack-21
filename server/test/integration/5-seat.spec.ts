@@ -1,6 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { io, type Socket } from 'socket.io-client';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { AppModule } from '../../src/app.module';
 import { Config } from '../../src/config';
 import type { GameState, LobbyState } from '../../src/shared/types';
@@ -13,7 +16,7 @@ async function listen<T = any>(socket: Socket, event: string, predicate?: (p: T)
 }
 
 async function connect(url: string): Promise<Socket> {
-  const sock = io(url, { transports: ['websocket'], forceNew: true });
+  const sock = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000001' } });
   await new Promise<void>((r) => sock.on('connect', () => r()));
   return sock;
 }
@@ -21,8 +24,13 @@ async function connect(url: string): Promise<Socket> {
 describe('gateway integration: 5-player full round', () => {
   let app: INestApplication;
   let url: string;
+  let dir: string;
 
   beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'bj21-5seat-'));
+    process.env.DB_PATH = join(dir, 'blackjack.db');
+    jest.resetModules();
+    const { AppModule } = require('../../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.enableCors({ origin: '*', credentials: true });
@@ -31,7 +39,10 @@ describe('gateway integration: 5-player full round', () => {
     url = `http://localhost:${addr.port}`;
   });
 
-  afterAll(async () => { await app.close(); });
+  afterAll(async () => {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('walks 5 clients through create → join → bet → deal → 5x stand → settle', async () => {
     // Connect host + 4 guests so the table fills 5 seats.

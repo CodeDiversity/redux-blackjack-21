@@ -1,6 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { io, type Socket } from 'socket.io-client';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { Config } from '../src/config';
 import { AppModule } from '../src/app.module';
 import type { GameState, LobbyState } from '../src/shared/types';
@@ -15,8 +18,13 @@ async function listen<T = any>(socket: Socket, event: string, predicate?: (p: T)
 describe('gateway auto-advance timers', () => {
   let app: INestApplication;
   let url: string;
+  let dir: string;
 
   beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'bj21-autoadvance-'));
+    process.env.DB_PATH = join(dir, 'blackjack.db');
+    jest.resetModules();
+    const { AppModule } = require('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.enableCors({ origin: '*', credentials: true });
@@ -25,10 +33,13 @@ describe('gateway auto-advance timers', () => {
     url = `http://localhost:${addr.port}`;
   });
 
-  afterAll(async () => { await app.close(); });
+  afterAll(async () => {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('attaches phaseEndsAt to the betting game:state', async () => {
-    const host = io(url, { transports: ['websocket'], forceNew: true });
+    const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000002' } });
     await new Promise<void>((r) => host.on('connect', () => r()));
     const lobby1 = listen<LobbyState>(host, 'lobby:state');
     await new Promise<void>((resolve) => {
@@ -47,8 +58,8 @@ describe('gateway auto-advance timers', () => {
   }, 10_000);
 
   it('attaches phaseEndsAt to the settled game:state', async () => {
-    const host = io(url, { transports: ['websocket'], forceNew: true });
-    const guest = io(url, { transports: ['websocket'], forceNew: true });
+    const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000002' } });
+    const guest = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000002' } });
     await Promise.all([
       new Promise<void>((r) => host.on('connect', () => r())),
       new Promise<void>((r) => guest.on('connect', () => r())),
@@ -93,7 +104,7 @@ describe('gateway auto-advance timers', () => {
   }, 20_000);
 
   it('cancels the timer when the room is destroyed', async () => {
-    const host = io(url, { transports: ['websocket'], forceNew: true });
+    const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000002' } });
     await new Promise<void>((r) => host.on('connect', () => r()));
     const lobby1 = listen<LobbyState>(host, 'lobby:state');
     await new Promise<void>((resolve) => {
@@ -105,7 +116,7 @@ describe('gateway auto-advance timers', () => {
     await bettingPromise;
     host.disconnect();
     await new Promise((r) => setTimeout(r, Config.DISCONNECT_GRACE_MS + 1_000));
-    const host2 = io(url, { transports: ['websocket'], forceNew: true });
+    const host2 = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000002' } });
     await new Promise<void>((r) => host2.on('connect', () => r()));
     const lobby2 = listen<LobbyState>(host2, 'lobby:state');
     await new Promise<void>((resolve) => {
@@ -120,8 +131,13 @@ describe('gateway auto-advance timers', () => {
 describe('gateway dealing-phase auto-advance', () => {
   let app: INestApplication;
   let url: string;
+  let dir: string;
 
   beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'bj21-autoadvance-'));
+    process.env.DB_PATH = join(dir, 'blackjack.db');
+    jest.resetModules();
+    const { AppModule } = require('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.enableCors({ origin: '*', credentials: true });
@@ -130,11 +146,14 @@ describe('gateway dealing-phase auto-advance', () => {
     url = `http://localhost:${addr.port}`;
   });
 
-  afterAll(async () => { await app.close(); });
+  afterAll(async () => {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('transitions dealing → player_turn after DEALING_DURATION_MS', async () => {
-    const host = io(url, { transports: ['websocket'], forceNew: true });
-    const guest = io(url, { transports: ['websocket'], forceNew: true });
+    const host = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000002' } });
+    const guest = io(url, { transports: ['websocket'], forceNew: true, auth: { playerId: '00000000-0000-4000-8000-000000000002' } });
     await Promise.all([
       new Promise<void>((r) => host.on('connect', () => r())),
       new Promise<void>((r) => guest.on('connect', () => r())),
