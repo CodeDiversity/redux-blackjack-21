@@ -18,7 +18,7 @@ const Backdrop = styled.div`
 `;
 
 const Dialog = styled.div`
-  background: ${({ theme }) => theme.colors.surface};
+  background: ${({ theme }) => theme.colors.entranceSurface};
   color: ${({ theme }) => theme.colors.textPrimary};
   border: 1px solid ${({ theme }) => theme.colors.surfaceDimmer};
   border-radius: ${({ theme }) => theme.radii.lg};
@@ -69,7 +69,7 @@ const Skeleton = styled.div`
   height: 120px; border-radius: ${({ theme }) => theme.radii.md};
   background: linear-gradient(90deg,
     ${({ theme }) => theme.colors.surfaceDimmer} 0%,
-    ${({ theme }) => theme.colors.surface} 50%,
+    ${({ theme }) => theme.colors.entranceSurfaceAlt} 50%,
     ${({ theme }) => theme.colors.surfaceDimmer} 100%);
   background-size: 200% 100%;
   animation: pulse 1.4s ease-in-out infinite;
