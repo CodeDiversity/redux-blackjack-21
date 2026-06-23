@@ -5,7 +5,6 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Config } from '../src/config';
-import { AppModule } from '../src/app.module';
 import type { GameState, LobbyState } from '../src/shared/types';
 
 async function listen<T = any>(socket: Socket, event: string, predicate?: (p: T) => boolean): Promise<T> {

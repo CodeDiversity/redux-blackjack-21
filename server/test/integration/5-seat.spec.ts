@@ -4,7 +4,6 @@ import { io, type Socket } from 'socket.io-client';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { AppModule } from '../../src/app.module';
 import { Config } from '../../src/config';
 import type { GameState, LobbyState } from '../../src/shared/types';
 
