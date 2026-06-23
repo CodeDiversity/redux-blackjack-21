@@ -1,6 +1,6 @@
-import { Controller, Get, Param, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, BadRequestException } from '@nestjs/common';
 import { getPlayerStats, getPerformanceBySeat, getPerformanceByBetSize, getAllHandsForStreaks } from '../storage/stats.repository';
-import { getRecentHands } from '../storage/hands.repository';
+import { getRecentHands, type Outcome } from '../storage/hands.repository';
 import { ACHIEVEMENTS, evaluateAchievement, longestWinStreak, type PlayerStats } from './achievements';
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -12,7 +12,7 @@ export type ProfileResponse = {
   streaks: {
     current: { kind: 'win' | 'loss' | null; length: number };
     longestWinStreak: number;
-    last10: string[];
+    last10: Outcome[];
   };
   bySeat: { seat_index: number; hands: number; wins: number }[];
   byBet: { bucket: 'small' | 'medium' | 'large' | 'max'; hands: number; wins: number }[];
@@ -24,7 +24,7 @@ export type ProfileResponse = {
 export class PlayerController {
   @Get(':playerId/profile')
   getProfile(@Param('playerId') playerId: string): ProfileResponse {
-    if (!UUID_V4_RE.test(playerId)) throw new NotFoundException('Player not found');
+    if (!UUID_V4_RE.test(playerId)) throw new BadRequestException('Invalid playerId');
     const stats = getPlayerStats(playerId);
     const hands = getAllHandsForStreaks(playerId);
     const streaks = computeStreaks(hands);
