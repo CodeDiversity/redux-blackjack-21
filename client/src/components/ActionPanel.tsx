@@ -41,7 +41,7 @@ const ActionButton = styled.button<{ $primary?: boolean }>`
 export function ActionPanel() {
   const isMyTurn = useSelector(selectIsMyTurn);
   const me = useSelector(selectMySeat);
-  const activeHandIndex = me?.hands.length ? me.hands.length - 1 : 0;
+  const activeHandIndex = me?.activeHandIndex ?? 0;
   const selectActions = makeSelectAvailableActions(activeHandIndex);
   const actions = useSelector((s: RootState) => selectActions(s));
 

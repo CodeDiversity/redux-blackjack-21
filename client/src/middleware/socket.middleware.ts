@@ -24,6 +24,11 @@ export const socketMiddleware = (getSocket: () => Socket): Middleware => () => (
       return;
     }
     case 'socket/bet': getSocket().emit('bet:place', { amount: action.amount }); return;
+    // handIndex MUST come from `state.game.players[mySeatId].activeHandIndex`
+    // (the server's value). Do not derive it from `hands.length - 1` — that
+    // returns 1 after a split, while the server's activeHandIndex is 0, and
+    // the isHandActive guard rejects mismatches with HAND_LOCKED.
+    // See docs/superpowers/specs/2026-06-23-hand-locked-after-split-design.md.
     case 'socket/hit': getSocket().emit('hand:hit', { handIndex: action.handIndex }); return;
     case 'socket/stand': getSocket().emit('hand:stand', { handIndex: action.handIndex }); return;
     case 'socket/double': getSocket().emit('hand:double', { handIndex: action.handIndex }); return;
