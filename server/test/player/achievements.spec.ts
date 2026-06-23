@@ -1,4 +1,5 @@
-import { ACHIEVEMENTS, evaluateAchievement, type HandRow, type PlayerStats } from '../../src/player/achievements';
+import { ACHIEVEMENTS, evaluateAchievement, type PlayerStats } from '../../src/player/achievements';
+import type { HandRow } from '../../src/storage/hands.repository';
 import { longestWinStreak, hadWinAfter3LossStreak } from '../../src/player/achievements';
 
 const makeStats = (over: Partial<PlayerStats> = {}): PlayerStats => ({

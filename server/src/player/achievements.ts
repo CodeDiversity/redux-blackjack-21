@@ -1,7 +1,5 @@
 import type { HandRow } from '../storage/hands.repository';
 
-export type { HandRow };
-
 export type PlayerStats = {
   hands_played: number;
   wins: number;
