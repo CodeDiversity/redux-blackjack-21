@@ -99,7 +99,7 @@ export function ProfileHistoryTab({ profile }: { profile: ProfileResponse }) {
     <Wrap>
       <List>
         {hands.map((h) => (
-          <Row key={h.id}>
+          <Row key={h.id} role="listitem">
             <OutcomeIcon $tone={toneFor(h.outcome)} aria-label={h.outcome}>{iconFor(h.outcome)}</OutcomeIcon>
             <div>
               <OutcomeLabel>{h.outcome}</OutcomeLabel>
