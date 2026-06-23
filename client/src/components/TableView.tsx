@@ -1,4 +1,4 @@
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import styled from 'styled-components';
 import { MotionConfig } from 'framer-motion';
 import { DealerArea } from './DealerArea';
@@ -8,6 +8,8 @@ import { ActionPanel } from './ActionPanel';
 import { BetPanel } from './BetPanel';
 import { ResultOverlay } from './ResultOverlay';
 import { DealAnimationDriver } from './DealAnimationDriver';
+import { profileModalOpened } from '../store/player.slice';
+import { ProfileModal } from './ProfileModal';
 import type { RootState } from '../store';
 
 const Page = styled.div`
@@ -53,6 +55,21 @@ const Brand = styled.div`
   font-style: italic;
 `;
 
+const HeaderRow = styled.div`
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%;
+`;
+
+const ProfileButton = styled.button`
+  background: rgba(255,255,255,0.08);
+  color: ${({ theme }) => theme.colors.feltStitch};
+  border: 1px solid ${({ theme }) => theme.colors.feltStitch};
+  border-radius: ${({ theme }) => theme.radii.sm};
+  padding: ${({ theme }) => `${theme.spacing.xs} ${theme.spacing.md}`};
+  font: inherit; cursor: pointer;
+  &:hover { background: rgba(255,255,255,0.15); }
+`;
+
 const Seats = styled.div`
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -82,6 +99,8 @@ const Loading = styled.div`
 export function TableView() {
   const state = useSelector((s: RootState) => s.game.state);
   const selfSeatId = useSelector((s: RootState) => s.connection.selfSeatId);
+  const dispatch = useDispatch();
+  const isSeated = useSelector((s: RootState) => s.connection.selfSeatId !== null);
   if (!state) return <Loading>Loading…</Loading>;
 
   // Pre-compute each non-empty player's deal-order position (0, 1, 2, ...).
@@ -100,7 +119,14 @@ export function TableView() {
         <TableSurface>
           <Stitching />
           <DealerArea />
-          <Brand>BLACKJACK PAYS 3 TO 2</Brand>
+          <HeaderRow>
+            <Brand>BLACKJACK PAYS 3 TO 2</Brand>
+            {isSeated && (
+              <ProfileButton onClick={() => dispatch(profileModalOpened())} aria-label="Open your profile">
+                Profile
+              </ProfileButton>
+            )}
+          </HeaderRow>
           <Seats>
             {state.players.map((p) =>
               p.status === 'empty' ? (
@@ -122,6 +148,7 @@ export function TableView() {
           </BottomRow>
           <ResultOverlay />
           <DealAnimationDriver />
+          <ProfileModal />
         </TableSurface>
       </MotionConfig>
     </Page>
