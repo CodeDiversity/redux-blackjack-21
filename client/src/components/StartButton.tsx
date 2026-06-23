@@ -58,8 +58,7 @@ const Cta = styled.button<{ $enabled: boolean }>`
 
 function hintText(seatedCount: number): string {
   if (seatedCount === 0) return 'Waiting for players to join…';
-  if (seatedCount === 1) return 'Waiting for 1 more player…';
-  return 'Waiting for all players…';
+  return '';
 }
 
 export function StartButton() {
@@ -74,7 +73,7 @@ export function StartButton() {
   // status). The lobby projection only contains seated players, so a missing
   // `status` is always "seated" — narrow with 'status' in s.
   const seatedCount = seats.filter((s) => ('status' in s ? s.status !== 'empty' : true)).length;
-  const canStart = seatedCount >= 2;
+  const canStart = seatedCount >= 1;
 
   return (
     <Wrap>
