@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { initDb, getDb } from '../../src/storage/db';
+import { initDb, getDb, _resetDbForTests } from '../../src/storage/db';
 
 describe('storage/db', () => {
   let dir: string;
@@ -11,10 +11,8 @@ describe('storage/db', () => {
   });
 
   afterEach(() => {
-    try { getDb().close(); } catch {}
+    try { _resetDbForTests(); } catch {}
     rmSync(dir, { recursive: true, force: true });
-    // Reset the module cache so each test gets a fresh singleton.
-    jest.resetModules();
   });
 
   it('creates the hands table and indexes on a fresh DB', () => {
