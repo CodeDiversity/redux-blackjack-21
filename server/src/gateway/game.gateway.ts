@@ -294,17 +294,25 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   private writeHandRows(roomId: string, state: GameState): void {
     if (!state.lastResult) return;
+    // The state machine emits one payout per hand (per player, in hand order). We
+    // index into `payouts` with a cursor advanced by `hands.length` per player so
+    // each split sub-hand gets its own correct payout.
+    let cursor = 0;
     for (const player of state.players) {
-      if (player.status === 'empty' || player.status === 'sitting_out') continue;
+      if (player.status === 'empty' || player.status === 'sitting_out') {
+        cursor += player.hands.length;
+        continue;
+      }
       const playerId = this.rooms.getPlayerIdForSeat(roomId, player.id);
-      if (!playerId) continue;
+      if (!playerId) {
+        cursor += player.hands.length;
+        continue;
+      }
+      const seatIdx = state.players.findIndex((p) => p.id === player.id);
       for (let handIndex = 0; handIndex < player.hands.length; handIndex++) {
         const hand = player.hands[handIndex];
         if (hand.cards.length === 0) continue;
-        // Find the payout for this seat+hand via lastResult.payouts. The state machine
-        // emits one payout per player per round (delta is summed across split sub-hands),
-        // so we map that single payout to each non-empty sub-hand proportionally.
-        const payout = state.lastResult.payouts.find((p) => p.seatId === player.id);
+        const payout = state.lastResult.payouts[cursor + handIndex];
         if (!payout) continue;
         // The state machine uses 'lose' (not 'loss') in payout reasons; normalize to
         // the hand-history outcome enum, which uses 'loss'.
@@ -319,7 +327,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
             bet_amount: hand.bet,
             outcome,
             net: subDelta,
-            seat_index: state.players.findIndex((p) => p.id === player.id),
+            seat_index: seatIdx,
             hand_index: handIndex,
             is_doubled: hand.doubled ? 1 : 0,
             player_total: handTotal(hand.cards),
@@ -334,6 +342,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
           this.log.warn(`hand row write failed for seat ${player.id}: ${(e as Error).message}`);
         }
       }
+      cursor += player.hands.length;
     }
   }
 
