@@ -143,6 +143,14 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     );
   }
 
+  private allActivePlayersHaveBet(state: GameState): boolean {
+    // Active = not empty, not sitting_out. The caller has just applied a
+    // successful bet:place, so there's at least one player with bet > 0;
+    // this returns true iff no other active player is still missing a bet.
+    return state.players.every((p) =>
+      p.status === 'empty' || p.status === 'sitting_out' || (p.hands[0]?.bet ?? 0) > 0);
+  }
+
   private fireAutoAdvance(roomId: string, phase: 'settled' | 'betting' | 'dealing') {
     this.pendingTimers.delete(roomId);
     const room = this.rooms.getState(roomId);
@@ -243,7 +251,14 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     const ctx = this.rooms.roomForSocket(client.id);
     if (!ctx) return this.sendError(client, 'NOT_YOUR_TURN');
     try {
-      const state = this.rooms.apply(ctx.roomId, { type: 'bet:place', seatId: ctx.seatId, amount: body.amount });
+      let state = this.rooms.apply(ctx.roomId, { type: 'bet:place', seatId: ctx.seatId, amount: body.amount });
+
+      // Early exit: if every active player has now bet, skip the 10s deadline.
+      if (state.phase === 'betting' && this.allActivePlayersHaveBet(state)) {
+        this.cancelAutoAdvance(ctx.roomId);              // kill the 10s fallback timer
+        state = this.fireBetDeadlineNow(ctx.roomId);     // deal immediately
+      }
+
       this.broadcastAll(ctx.roomId, state);
     } catch (e) {
       if (e instanceof GameError) return this.sendError(client, e.code as any);
