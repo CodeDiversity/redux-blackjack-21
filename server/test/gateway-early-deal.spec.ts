@@ -201,32 +201,24 @@ describe('gateway early-deal (all-active-players-have-bet)', () => {
     charlie.disconnect();
   }, 30_000);
 
-  it('no intermediate betting broadcast after the all-in bet', async () => {
-    // Two-player room. After both players bet, the very next broadcast must
+  it('no intermediate betting broadcast after the all-in bet (solo)', async () => {
+    // Solo room. After the only player bets, the very next broadcast must
     // be the dealing state — not a betting state with the bet recorded, then
-    // a dealing state later. Today's onBet broadcasts the betting state with
-    // the bet applied; the early-deal fix collapses it into a single dealing
-    // broadcast.
+    // a dealing state later. The early-deal branch collapses the bet:place
+    // broadcast and the deal into a single dealing broadcast, so the user
+    // never sees a betting countdown flash.
     const host = await connectPlayer(url, '00000000-0000-4000-8000-000000000030');
-    const guest = await connectPlayer(url, '00000000-0000-4000-8000-000000000031');
-    const lobby = listen<LobbyState>(host, 'lobby:state');
-    await new Promise<void>((resolve) => host.emit('room:create', { name: 'Alice' }, () => resolve()));
-    const lobbyState = await lobby;
-    await new Promise<void>((resolve) => guest.emit('room:join', { roomId: lobbyState.roomId, name: 'Bob' }, () => resolve()));
-
-    const betting = listen<GameState>(host, 'game:state', (s) => s.phase === 'betting');
-    host.emit('round:ready');
-    await betting;
+    await createRoomAndStartBetting(host);
 
     // Collect every game:state broadcast that arrives on the host socket for
     // 600ms after the all-in bet. The list must contain zero betting-phase
-    // broadcasts (today it contains one: the bet:place broadcast).
+    // broadcasts (the pre-fix code broadcasts betting with the bet applied,
+    // then dealing after the deal completes).
     const broadcasts: GameState[] = [];
     const collector = (s: GameState) => { broadcasts.push(s); };
     host.on('game:state', collector);
 
     host.emit('bet:place', { amount: 50 });
-    guest.emit('bet:place', { amount: 50 });
 
     // Wait long enough that any intermediate betting broadcast would have
     // arrived, but well under the 10s BET_DEADLINE_MS window so the fallback
@@ -241,6 +233,5 @@ describe('gateway early-deal (all-active-players-have-bet)', () => {
     expect(last.phase).toBe('dealing');
 
     host.disconnect();
-    guest.disconnect();
   }, 10_000);
 });

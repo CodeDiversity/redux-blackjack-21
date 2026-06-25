@@ -175,12 +175,10 @@ describe('gateway dealing-phase auto-advance', () => {
     host.emit('bet:place', { amount: 50 });
     guest.emit('bet:place', { amount: 50 });
 
-    // The bet deadline fires automatically; the gateway then transitions
-    // the room to 'dealing' and schedules a DEALING_DURATION_MS timer.
-    // Wait for 'dealing' to appear, then assert it carries phaseEndsAt,
-    // and finally assert the next phase is 'player_turn'.
+    // With early-deal wired, dealing fires within ms of both bets landing.
+    // Capture the dealing broadcast via a listener so phaseEndsAt is read
+    // immediately (the deadline timer is cancelled by the early-deal branch).
     const dealingPromise = listen<GameState>(host, 'game:state', (s) => s.phase === 'dealing');
-    await new Promise((r) => setTimeout(r, Config.BET_DEADLINE_MS + 500));
     const dealing = await dealingPromise;
     expect(dealing.phase).toBe('dealing');
     expect(dealing.phaseEndsAt).not.toBeNull();
