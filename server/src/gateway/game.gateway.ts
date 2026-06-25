@@ -133,6 +133,16 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (entry) { clearTimeout(entry.timer); this.pendingTimers.delete(roomId); }
   }
 
+  private fireBetDeadlineNow(roomId: string): GameState {
+    this.games.ensureShoe(roomId, this.rooms.getState(roomId)!);
+    const draw = () => this.games.draw(roomId).card;
+    return this.rooms.apply(
+      roomId,
+      { type: 'round:betDeadline', seatId: '__server__' },
+      draw,
+    );
+  }
+
   private fireAutoAdvance(roomId: string, phase: 'settled' | 'betting' | 'dealing') {
     this.pendingTimers.delete(roomId);
     const room = this.rooms.getState(roomId);
@@ -147,9 +157,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         this.rooms.apply(roomId, { type: 'round:dealingComplete', seatId: '__server__' });
         this.broadcastAll(roomId, this.rooms.getState(roomId)!);
       } else {
-        this.games.ensureShoe(roomId, this.rooms.getState(roomId)!);
-        const draw = () => this.games.draw(roomId).card;
-        this.rooms.apply(roomId, { type: 'round:betDeadline', seatId: '__server__' }, draw);
+        this.fireBetDeadlineNow(roomId);
         this.broadcastAll(roomId, this.rooms.getState(roomId)!);
       }
     } catch (e) {
