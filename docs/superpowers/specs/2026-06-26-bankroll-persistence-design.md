@@ -81,22 +81,25 @@ export function setBankroll(playerId: string, amount: number): void;
 
 Two entry points hydrate a seat's bankroll from the repo:
 
-- `createRoom` → `assignSeat(state, seatId, hostSocketId, hostName, hostPlayerId)`:
-  load `getBankroll(hostPlayerId)` and override the seat's default `bankroll`
-  field on `next[idx]`.
-- `joinRoom` → `assignSeat(state, seatId, socketId, name, playerId)`: same.
-- `resumeSeat(roomId, seatToken, newSocketId, playerId)`: same — when a
-  reconnecting player resumes into their old seat, the seat's in-memory
-  bankroll (which was the persisted value at last writeback) is already
-  correct, but if a different playerId is presented (token reuse by someone
-  who knows the seatToken, which is currently possible — see Risks), they
-  would still see the seat's current bankroll. **Decision:** for the first
-  version, resumeSeat uses the seat's existing bankroll as-is and does NOT
-  re-hydrate. Rationale: re-hydrating on resume would overwrite any in-progress
-  hand's pending changes (the seat's bankroll has already been debited for
-  the current round). The simpler invariant — bankroll persists across server
-  restart, not across seat re-assignment by a different playerId — matches
-  the stated goal and is a smaller change.
+- `createRoom` → `assignSeat(state, seatId, hostSocketId, hostName, hostPlayerId)`
+- `joinRoom` → `assignSeat(state, seatId, socketId, name, playerId)`
+
+In each, `assignSeat` calls `getBankroll(playerId)` and overrides the seat's
+default `bankroll` field on `next[idx]`.
+
+**Implementation note:** `assignSeat` currently takes only `(state, seatId,
+socketId, name)` and does not know the playerId. The implementation must
+extend its signature to accept `playerId` and thread it through from both
+call sites (the parameters already exist in `createRoom` and `joinRoom`'s
+signatures — they're just dropped before reaching `assignSeat`).
+
+**`resumeSeat` is intentionally NOT a hydration point.** When a reconnecting
+player resumes into their old seat, the seat's in-memory bankroll (already
+equal to the persisted value at last writeback) is correct. Re-hydrating
+on resume would also overwrite any in-progress hand's pending changes
+(the seat's bankroll has already been debited for the current round). The
+simpler invariant — bankroll persists across server restart, not across
+seat re-assignment — matches the stated goal and is a smaller change.
 
 ### 4. Writeback after every bankroll-changing action in `room.service.ts`
 
