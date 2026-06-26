@@ -29,7 +29,6 @@ test('two players can play two full rounds with rebet', async () => {
   await guestPage.fill('.bet-panel input', '50');
   await guestPage.click('button:has-text("Place Bet")');
 
-  await hostPage.click('button:has-text("Deal")');
   await hostPage.waitForSelector('.action-panel', { timeout: 10_000 });
 
   // Both stand until settled. Use a polling loop; one of the two attempts per round
@@ -44,12 +43,11 @@ test('two players can play two full rounds with rebet', async () => {
   await hostPage.waitForSelector('.result-overlay', { timeout: 10_000 });
 
   // ───── ADVANCE TO NEXT HAND ─────
-  // Host sees the Next Hand button; guest does not.
-  await expect(hostPage.locator('button:has-text("Next Hand")')).toBeVisible();
-  await expect(guestPage.locator('button:has-text("Next Hand")')).toHaveCount(0);
-
-  await hostPage.click('button:has-text("Next Hand")');
-  await hostPage.waitForSelector('.bet-panel', { timeout: 5_000 });
+  // The server's settle-pause auto-advance moves the room to the next
+  // betting phase on its own (SETTLE_PAUSE_MS = 3000). Wait for .bet-panel
+  // to reappear on the host instead of trying to catch the "Next Hand"
+  // button before the window expires.
+  await hostPage.waitForSelector('.bet-panel', { timeout: 10_000 });
 
   // ───── ROUND 2: rebet ─────
   // Both players should see the Rebet button since lastBet=50 and bankroll is positive.
@@ -59,7 +57,6 @@ test('two players can play two full rounds with rebet', async () => {
   await hostPage.click('button:has-text("Rebet $50")');
   await guestPage.click('button:has-text("Rebet $50")');
 
-  await hostPage.click('button:has-text("Deal")');
   await hostPage.waitForSelector('.action-panel', { timeout: 10_000 });
 
   await browser.close();
