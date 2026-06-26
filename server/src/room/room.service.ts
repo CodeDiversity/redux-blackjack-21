@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { Config } from '../config';
 import { createInitialState, GameError, applyAction, type Action } from '../game/state-machine';
 import { generateRoomCode } from './room-code';
+import { getBankroll } from '../storage/bankroll.repository';
 import type { Card, GameState, LobbyState, PlayerSeat } from '../shared/types';
 
 @Injectable()
@@ -14,7 +15,7 @@ export class RoomService {
     const state = createInitialState(roomId, Config.SEAT_COUNT);
     const seatId = randomUUID();
     const seatToken = randomUUID();
-    this.assignSeat(state, seatId, hostSocketId, hostName);
+    this.assignSeat(state, seatId, hostSocketId, hostName, hostPlayerId);
     const room: Room = {
       id: roomId,
       state,
@@ -30,7 +31,7 @@ export class RoomService {
     if (room.seats.size >= Config.SEAT_COUNT) throw new GameError('ROOM_FULL');
     const seatId = randomUUID();
     const seatToken = randomUUID();
-    this.assignSeat(room.state, seatId, socketId, name);
+    this.assignSeat(room.state, seatId, socketId, name, playerId);
     room.seats.set(seatId, { socketId, seatId, seatToken, name, playerId });
     return { seatId, seatToken, state: room.state };
   }
@@ -141,11 +142,18 @@ export class RoomService {
     return id;
   }
 
-  private assignSeat(state: GameState, seatId: string, socketId: string, name: string): PlayerSeat {
+  private assignSeat(state: GameState, seatId: string, socketId: string, name: string, playerId: string): PlayerSeat {
     const idx = state.players.findIndex((p) => p.status === 'empty');
     if (idx === -1) throw new GameError('ROOM_FULL');
     const next = [...state.players];
-    next[idx] = { ...next[idx], id: seatId, name, status: 'betting' as const, connectedAt: Date.now() };
+    next[idx] = {
+      ...next[idx],
+      id: seatId,
+      name,
+      bankroll: getBankroll(playerId),
+      status: 'betting' as const,
+      connectedAt: Date.now(),
+    };
     state.players = next;
     return next[idx];
   }
