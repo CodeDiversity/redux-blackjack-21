@@ -42,4 +42,19 @@ describe('storage/db', () => {
     initDb({ dbPath });
     expect(() => initDb({ dbPath })).not.toThrow();
   });
+
+  it('creates the bankrolls table on a fresh DB', () => {
+    const dbPath = join(dir, 'blackjack.db');
+    initDb({ dbPath });
+    const db = getDb();
+    const tables = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='bankrolls'"
+    ).all() as { name: string }[];
+    expect(tables.map((t) => t.name)).toContain('bankrolls');
+
+    // Smoke-check the schema: the two required columns must exist.
+    const cols = db.prepare("PRAGMA table_info(bankrolls)").all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).toEqual(expect.arrayContaining(['player_id', 'amount', 'updated_at']));
+  });
 });

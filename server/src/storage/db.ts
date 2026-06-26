@@ -30,6 +30,12 @@ CREATE INDEX IF NOT EXISTS idx_hands_player_outcome   ON hands (player_id, outco
 CREATE INDEX IF NOT EXISTS idx_hands_player_seat      ON hands (player_id, seat_index);
 CREATE INDEX IF NOT EXISTS idx_hands_player_bet       ON hands (player_id, bet_amount);
 CREATE INDEX IF NOT EXISTS idx_hands_room             ON hands (room_code, round_number);
+
+CREATE TABLE IF NOT EXISTS bankrolls (
+  player_id   TEXT    PRIMARY KEY,
+  amount      INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
 `;
 
 export type InitDbOptions = { dbPath: string };
