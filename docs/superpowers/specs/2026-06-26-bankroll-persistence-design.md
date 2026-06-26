@@ -115,14 +115,20 @@ In `room.service.apply(roomId, action, draw?)`:
    `next[i].status !== 'empty'`, call `setBankroll(entry.playerId, next[i].bankroll)`
    using the `playerId` from `room.seats.get(seatId)`.
 
-This adds persistence at the only two bankroll-changing events in the state
+This adds persistence at the three bankroll-changing events in the state
 machine today:
 
-- `bet:place` (line 368 of `state-machine.ts`): `bankroll - bet`.
-- `round:resolve` (line 419): `bankroll + totalDelta` (payouts).
+- `hand:double` (line 368 of `state-machine.ts`, `assignDouble`): `bankroll - hand.bet`.
+- `hand:split` (line 395, `assignSplit`): `bankroll - hand.bet` for the second hand.
+- `round:resolve` (line 419, via `assignSettle`): `bankroll + totalDelta` (payouts).
 
-The diff also catches `hand:double` (line 368 — same path as `bet:place` for
-the doubled amount) and `hand:split` (line 395 — second hand's bet debited).
+`bet:place` only sets `hands[0].bet` — it does NOT mutate `bankroll`. The
+bankroll debit happens later when the hand is doubled, split, or resolved.
+The `sitting_out` branch in `assignAdvance` (line 448) only changes status,
+not bankroll.
+
+The diff loop is action-agnostic — it fires whenever `next[i].bankroll !==
+prev[i]`, regardless of which state-machine transition produced the change.
 Any future state-machine transition that mutates `bankroll` is automatically
 covered by the diff without changes to the persistence layer.
 

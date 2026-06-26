@@ -89,12 +89,14 @@ describe('bankroll persistence (end-to-end)', () => {
     // RoomService.apply fires once per bankroll-changing action, so by
     // the time we reach settled the row reflects the post-settle value.
     // Use a fresh better-sqlite3 connection here (not getDb()) because
-    // jest.resetModules() gives the test file and the freshly-loaded
-    // AppModule separate module instances of storage/db; their _db
-    // singletons point at different in-memory connection state even
-    // though both open the same file on disk. A direct Database(path)
-    // bypasses the singleton and gives us a fresh reader that sees
-    // the writes from the app's connection.
+    // jest.resetModules() causes this test file and the freshly-loaded
+    // AppModule to each evaluate storage/db.ts as a separate module
+    // instance, so each has its own `_db` singleton. The test file's
+    // Config.DB_PATH was captured at the test's import time (before
+    // beforeAll set process.env.DB_PATH), so the test's getDb() would
+    // resolve to the default 'data/blackjack.db' — not the tempdir.
+    // Opening `new Database(dbPath)` directly bypasses both singletons
+    // and reads the same on-disk file the app's connection wrote to.
     const reader1 = new Database(dbPath);
     const row1 = reader1
       .prepare('SELECT amount FROM bankrolls WHERE player_id = ?')

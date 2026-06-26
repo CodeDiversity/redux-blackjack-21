@@ -408,7 +408,7 @@ apply(roomId: string, action: Action, draw?: () => Card): GameState {
 }
 ```
 
-Read `server/src/game/state-machine.ts:368`, `:395`, `:419`, `:448` to confirm: those four lines are the only places inside `applyAction` that mutate `PlayerSeat.bankroll`. The diff in this task catches all four.
+Read `server/src/game/state-machine.ts:368`, `:395`, `:419` to confirm: those three lines are the only places inside `applyAction` that mutate `PlayerSeat.bankroll`. The diff in this task catches all three. (`assignBet` at line 423 only sets `hands[0].bet` — it does NOT touch `bankroll`. `assignAdvance` at line 448 only changes status, not `bankroll`.)
 
 ### Step 2: Write the failing writeback tests
 
@@ -450,9 +450,13 @@ describe('RoomService bankroll writeback', () => {
     _resetDbForTests();
   });
 
-  it('writeback fires for bet:place and persists the new bankroll', () => {
-    const action: Action = { type: 'bet:place', seatId: hostSeatId, amount: 50 };
-    svc.apply(roomId, action);
+  it('writeback fires for hand:double and persists the new bankroll', () => {
+    // bet:place only sets hands[0].bet — bankroll is debited by hand:double.
+    // Use a deterministic draw stub to make the next card non-bust so the
+    // player can stand after the double.
+    const draw = () => ({ suit: 'H' as const, rank: '5' as const });
+    const action: Action = { type: 'hand:double', handIndex: 0 };
+    svc.apply(roomId, action, draw);
     // Host's bankroll should now be 950 in the DB.
     const row = getDb()
       .prepare('SELECT amount FROM bankrolls WHERE player_id = ?')
@@ -461,12 +465,13 @@ describe('RoomService bankroll writeback', () => {
   });
 
   it('writeback fires independently for each player', () => {
-    svc.apply(roomId, { type: 'bet:place', seatId: hostSeatId, amount: 50 });
-    svc.apply(roomId, { type: 'bet:place', seatId: guestSeatId, amount: 100 });
+    const draw = () => ({ suit: 'H' as const, rank: '5' as const });
+    svc.apply(roomId, { type: 'hand:double', handIndex: 0 }, draw);
+    svc.apply(roomId, { type: 'hand:double', handIndex: 0 }, draw);
     const host = getDb().prepare('SELECT amount FROM bankrolls WHERE player_id = ?').get(playerA) as { amount: number };
     const guest = getDb().prepare('SELECT amount FROM bankrolls WHERE player_id = ?').get(guestPlayerId) as { amount: number };
     expect(host.amount).toBe(950);
-    expect(guest.amount).toBe(900);
+    expect(guest.amount).toBe(950);
   });
 
   it('writeback does NOT fire when bankroll is unchanged (e.g. round:ready)', () => {
@@ -569,10 +574,11 @@ git commit -m "feat(server): writeback seat bankroll after every action
 
 After applyAction returns in RoomService.apply, diff pre/post bankrolls
 for every seat and call setBankroll for any seat whose bankroll changed
-AND whose status is not 'empty'. Catches all four state-machine
-transitions that mutate PlayerSeat.bankroll (bet:place, hand:split,
-round:resolve, sitting_out) without coupling the writeback to any
-specific action type.
+AND whose status is not 'empty'. Catches all three state-machine
+transitions that mutate PlayerSeat.bankroll (hand:double, hand:split,
+round:resolve) without coupling the writeback to any specific action
+type. bet:place only sets hands[0].bet — the bankroll debit happens
+later when the hand is doubled, split, or resolved.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
