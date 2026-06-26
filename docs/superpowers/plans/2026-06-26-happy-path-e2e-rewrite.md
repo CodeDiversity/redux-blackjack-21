@@ -2,9 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `client/e2e/happy-path.spec.ts` pass against the current UI by removing the two stale `button:has-text("Deal")` clicks left over from before commits `691d934` (Deal button removed) and `1046db9` (fast-deal added).
+**Goal:** Make `client/e2e/happy-path.spec.ts` pass against the current UI by removing two stale `button:has-text("Deal")` clicks (lines 32 and 62) and dropping the manual "Next Hand" advance step (lines 46–51), both of which were written assuming behavior that no longer exists.
 
-**Architecture:** Test-only change in a single file. No production code touched. After both `bet:place` (round 1) and both `rebet` (round 2) clicks, the server's fast-deal branch broadcasts `dealing` immediately, which surfaces `.action-panel` on the clients within ~2s. The existing `waitForSelector('.action-panel', { timeout: 10_000 })` calls already have headroom to resolve from that broadcast.
+**Architecture:** Test-only change in a single file. No production code touched. Two fixes:
+
+1. **Deal clicks removed.** Commits `691d934` (Deal button removed) and `1046db9` (fast-deal added) mean dealing now fires automatically when both players have bet. The two `await hostPage.click('button:has-text("Deal")');` calls wait on elements that no longer exist and exhaust the test's 30s budget.
+2. **Next Hand click dropped.** After settlement, the server's `SETTLE_PAUSE_MS = 3000` auto-advance moves the room to the next betting phase before the test's 5s Playwright timeout can confirm "Next Hand" was ever visible. Waiting for `.bet-panel` directly races the auto-advance correctly.
 
 **Tech Stack:** Playwright (client E2E), TypeScript end-to-end.
 
@@ -21,9 +24,9 @@
 
 | File | Responsibility | Change |
 |---|---|---|
-| `client/e2e/happy-path.spec.ts` | Two-player E2E smoke test for a full round flow with rebet | Modify: delete two lines (32 and 62) |
+| `client/e2e/happy-path.spec.ts` | Two-player E2E smoke test for a full round flow with rebet | Modify: delete the two Deal clicks (lines 32, 62) and replace the Next Hand click block (lines 45–52) with a direct `.bet-panel` wait |
 
-No other files are touched. The Deal button is not coming back; the bet-deadline auto-advance and fast-deal are the only paths out of `betting`.
+No other files are touched. The Deal button is not coming back; the bet-deadline auto-advance and fast-deal are the only paths out of `betting`. Next Hand auto-advance via `SETTLE_PAUSE_MS` is the only path out of `settled`.
 
 ---
 
@@ -97,7 +100,36 @@ Round 1 context (lines 27–34) becomes:
 
 The `.action-panel` wait now resolves from the fast-deal `dealing` broadcast that arrives within ~2s of both `Place Bet` clicks landing.
 
-- [ ] **Step 2: Delete the round-2 Deal click**
+- [ ] **Step 2: Replace the Next Hand click block with a direct `.bet-panel` wait**
+
+The current block (lines 45–52) tries to assert that the host sees "Next Hand" and the guest does not, then click it:
+
+```ts
+  // ───── ADVANCE TO NEXT HAND ─────
+  // Host sees the Next Hand button; guest does not.
+  await expect(hostPage.locator('button:has-text("Next Hand")')).toBeVisible();
+  await expect(guestPage.locator('button:has-text("Next Hand")')).toHaveCount(0);
+
+  await hostPage.click('button:has-text("Next Hand")');
+  await hostPage.waitForSelector('.bet-panel', { timeout: 5_000 });
+```
+
+The "Next Hand" button is only visible during the server's `SETTLE_PAUSE_MS = 3000` settle-pause window. By the time the test reaches this block, the Stand loop (lines 36–40) and the `.result-overlay` wait (line 43) have already consumed most of that 3-second window, and the server has often auto-advanced to `betting` before the `toBeVisible` assertion runs.
+
+Replace lines 45–52 with a single `.bet-panel` wait that races the auto-advance correctly:
+
+```ts
+  // ───── ADVANCE TO NEXT HAND ─────
+  // The server's settle-pause auto-advance moves the room to the next
+  // betting phase on its own (SETTLE_PAUSE_MS = 3000). Wait for .bet-panel
+  // to reappear on the host instead of trying to catch the "Next Hand"
+  // button before the window expires.
+  await hostPage.waitForSelector('.bet-panel', { timeout: 10_000 });
+```
+
+The 10s timeout covers the worst-case settle-pause + race-condition path. The Next Hand visibility assertions are dropped — the test no longer makes a claim about UI text that the new behavior makes racy.
+
+- [ ] **Step 3: Delete the round-2 Deal click**
 
 In `client/e2e/happy-path.spec.ts`, remove line 62 (the only remaining Deal click):
 
@@ -116,7 +148,7 @@ Round 2 context (lines 59–64) becomes:
 
 Same logic: the second `Rebet $50` click triggers fast-deal again, `.action-panel` appears on the host within ~2s.
 
-- [ ] **Step 3: Confirm zero remaining Deal references in the file**
+- [ ] **Step 4: Confirm zero remaining Deal references in the file**
 
 ```bash
 cd client && grep -n 'Deal' e2e/happy-path.spec.ts
@@ -124,7 +156,15 @@ cd client && grep -n 'Deal' e2e/happy-path.spec.ts
 
 Expected: no output (zero matches). The Deal button is gone for good; the test should no longer reference it.
 
-- [ ] **Step 4: Run the rewritten test and confirm it passes**
+- [ ] **Step 5: Confirm zero remaining Next Hand references in the file**
+
+```bash
+cd client && grep -n 'Next Hand' e2e/happy-path.spec.ts
+```
+
+Expected: no output (zero matches). The Next Hand click path is gone; auto-advance drives the transition.
+
+- [ ] **Step 6: Run the rewritten test and confirm it passes**
 
 ```bash
 cd client && npx playwright test happy-path.spec.ts --reporter=line
@@ -132,7 +172,7 @@ cd client && npx playwright test happy-path.spec.ts --reporter=line
 
 Expected: 1 passed, 1 skipped. The pass should complete well under the 30s budget (the actual fast-deal + Stand-loop + result-overlay round takes ~10s; round 2 is just Rebet → action-panel).
 
-- [ ] **Step 5: Run the full E2E suite to confirm no regression in adjacent flows**
+- [ ] **Step 7: Run the full E2E suite to confirm no regression in adjacent flows**
 
 ```bash
 cd client && npx playwright test --reporter=line
@@ -140,7 +180,7 @@ cd client && npx playwright test --reporter=line
 
 Expected: 8 passed, 4 skipped, 0 failed. The four skipped tests are pre-existing `test.skip()` stubs in `auto-advance.spec.ts` and `happy-path.spec.ts:68` (drop-and-reconnect) — they are not affected by this change.
 
-- [ ] **Step 6: Confirm client unit tests are unaffected**
+- [ ] **Step 8: Confirm client unit tests are unaffected**
 
 ```bash
 cd client && npx vitest run
@@ -148,11 +188,11 @@ cd client && npx vitest run
 
 Expected: 26 test files, 128 tests, all pass. Vitest is unrelated to the E2E suite but the sanity check costs ~5s.
 
-- [ ] **Step 7: Commit the rewrite**
+- [ ] **Step 9: Commit the rewrite**
 
 ```bash
 cd client && git add e2e/happy-path.spec.ts
-git commit -m "test(e2e): remove stale Deal clicks from happy-path"
+git commit -m "test(e2e): drop stale Deal + Next Hand paths from happy-path"
 ```
 
 The commit subject follows the repo convention (`<type>(<scope>): <verb> <noun>`); see `git log --oneline -10` for examples. Body is unnecessary — the commit is self-explanatory in context.
@@ -169,3 +209,7 @@ Run all four commands from the repo root before declaring the plan complete:
 - [ ] **E2E full suite:** `cd client && npx playwright test` → 8 passed, 4 skipped, 0 failed.
 
 If any of these fail, fix the cause before merging — do not `.skip()` the failing test as a workaround.
+
+## Scope note (added during execution)
+
+When Task 2's implementer applied the Deal-click deletions, the test still failed — but at a *different* line. The Deal-click hang was masking a downstream race: the Next Hand visibility assertions (lines 47–48) lost the 3-second `SETTLE_PAUSE_MS` window to the Stand loop and `.result-overlay` wait above them. The user authorized extending Task 2 to drop those assertions and replace the manual Next Hand click with a direct `.bet-panel` wait. The spec (`docs/superpowers/specs/2026-06-26-happy-path-e2e-rewrite-design.md`) still describes the original "minimal — just remove the Deal clicks" scope; this plan reflects the extended scope.
