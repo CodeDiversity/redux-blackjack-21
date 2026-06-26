@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { Config } from '../config';
 import { createInitialState, GameError, applyAction, type Action } from '../game/state-machine';
 import { generateRoomCode } from './room-code';
-import { getBankroll } from '../storage/bankroll.repository';
+import { getBankroll, setBankroll } from '../storage/bankroll.repository';
 import type { Card, GameState, LobbyState, PlayerSeat } from '../shared/types';
 
 @Injectable()
@@ -81,8 +81,25 @@ export class RoomService {
   apply(roomId: string, action: Action, draw?: () => Card): GameState {
     const room = this.rooms.get(roomId);
     if (!room) throw new GameError('ROOM_NOT_FOUND');
+
+    // Snapshot pre-action bankrolls so we can writeback any seat whose
+    // bankroll changed. The state machine is pure; persistence is the room
+    // service's job (mirrors how hands.repository.recordHand is called from
+    // the gateway, not from inside applyAction).
+    const prevBankrolls = room.state.players.map((p) => p.bankroll);
+
     const next = applyAction(room.state, action, draw);
     room.state = next;
+
+    for (let i = 0; i < next.players.length; i++) {
+      const seat = next.players[i];
+      if (seat.status === 'empty') continue;
+      if (prevBankrolls[i] === seat.bankroll) continue;
+      const entry = room.seats.get(seat.id);
+      if (!entry?.playerId) continue;
+      setBankroll(entry.playerId, seat.bankroll);
+    }
+
     return next;
   }
 
